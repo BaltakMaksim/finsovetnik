@@ -1,0 +1,50 @@
+// src/components/Chat/ChatInput.module.scss
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: $color-surface;
+  border-top: 1px solid $color-border;
+}
+
+.inputWrapper {
+  flex: 1;
+  position: relative;
+}
+
+.textarea {
+  @include input-base;
+  min-height: 48px;
+  max-height: 120px;
+  resize: none;
+  padding-right: 3rem; // Место для кнопки внутри инпута (опционально)
+  line-height: $line-height-normal;
+  overflow-y: auto;
+
+  @include scrollbar-thin;
+}
+
+.sendButton {
+  @include button-primary;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: $radius-lg;
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.hint {
+  @include text-muted;
+  font-size: $font-size-xs;
+  margin-top: 0.25rem;
+  padding-left: 0.25rem;
+}

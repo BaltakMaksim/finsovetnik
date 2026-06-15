@@ -1,0 +1,234 @@
+// src/styles/_mixins.scss
+@use 'variables' as *;
+
+// ==========================================
+// 🃏 КАРТОЧКИ И ПАНЕЛИ
+// ==========================================
+@mixin card {
+  background: $color-surface;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-sm;
+  border: 1px solid $color-border;
+  padding: 1.5rem;
+}
+
+@mixin card-hover {
+  @include card;
+  transition: box-shadow $transition-base, transform $transition-base;
+
+  &:hover {
+    box-shadow: $shadow-md;
+    transform: translateY(-1px);
+  }
+}
+
+// ==========================================
+// 🔘 КНОПКИ
+// ==========================================
+@mixin button-base {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  font-family: $font-family;
+  cursor: pointer;
+  transition: all $transition-fast;
+  border: none;
+  outline: none;
+  text-decoration: none;
+  line-height: $line-height-tight;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.25);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+@mixin button-primary {
+  @include button-base;
+  background: $color-primary;
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    background: $color-primary-hover;
+  }
+}
+
+@mixin button-secondary {
+  @include button-base;
+  background: transparent;
+  color: $color-text;
+  border: 1px solid $color-border;
+
+  &:hover:not(:disabled) {
+    background: $color-surface-hover;
+    border-color: $color-text-muted;
+  }
+}
+
+@mixin button-ghost {
+  @include button-base;
+  background: transparent;
+  color: $color-text-secondary;
+  padding: 0.5rem 0.75rem;
+
+  &:hover:not(:disabled) {
+    background: $color-surface-hover;
+    color: $color-text;
+  }
+}
+
+// ==========================================
+// 📝 ИНПУТЫ
+// ==========================================
+@mixin input-base {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background: $color-surface;
+  color: $color-text;
+  font-size: $font-size-base;
+  font-family: $font-family;
+  line-height: $line-height-normal;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+  outline: none;
+
+  &::placeholder {
+    color: $color-text-muted;
+  }
+
+  &:focus {
+    border-color: $color-border-focus;
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+  }
+
+  &:disabled {
+    background: $color-surface-hover;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+// ==========================================
+// 📝 ТИПОГРАФИКА
+// ==========================================
+@mixin heading-1 {
+  font-size: $font-size-3xl;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-tight;
+  color: $color-text;
+}
+
+@mixin heading-2 {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-semibold;
+  line-height: $line-height-tight;
+  color: $color-text;
+}
+
+@mixin heading-3 {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-semibold;
+  line-height: $line-height-tight;
+  color: $color-text;
+}
+
+@mixin body-text {
+  font-size: $font-size-base;
+  font-weight: $font-weight-normal;
+  line-height: $line-height-normal;
+  color: $color-text;
+}
+
+@mixin text-muted {
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+  line-height: $line-height-normal;
+}
+
+@mixin text-small {
+  font-size: $font-size-xs;
+  line-height: $line-height-normal;
+  color: $color-text-secondary;
+}
+
+// ==========================================
+// 🏷 ТЕГИ / БЕЙДЖИ
+// ==========================================
+@mixin badge($bg-color, $text-color) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  background: $bg-color;
+  color: $text-color;
+  line-height: $line-height-tight;
+}
+
+@mixin badge-success {
+  @include badge(rgba($color-success, 0.12), $color-primary);
+}
+
+@mixin badge-error {
+  @include badge(rgba($color-error, 0.12), $color-error);
+}
+
+@mixin badge-warning {
+  @include badge(rgba($color-warning, 0.12), darken($color-warning, 15%));
+}
+
+// ==========================================
+// 🎯 УТИЛИТЫ
+// ==========================================
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: $color-border transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $color-border;
+    border-radius: $radius-full;
+
+    &:hover {
+      background: $color-text-muted;
+    }
+  }
+}

@@ -1,0 +1,121 @@
+// src/styles/global.scss
+@use 'variables' as *;
+
+// ==========================================
+// 🔤 ПОДКЛЮЧЕНИЕ ШРИФТА
+// ==========================================
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+// ==========================================
+// 🔄 СБРОС СТИЛЕЙ (Modern Reset)
+// ==========================================
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: $font-family;
+  font-size: $font-size-base;
+  line-height: $line-height-normal;
+  color: $color-text;
+  background-color: $color-bg;
+  min-height: 100vh;
+}
+
+// ==========================================
+// 🔗 БАЗОВЫЕ ЭЛЕМЕНТЫ
+// ==========================================
+a {
+  color: $color-primary;
+  text-decoration: none;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary-hover;
+  }
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+// ==========================================
+// 🎯 УТИЛИТАРНЫЕ КЛАССЫ (глобальные)
+// ==========================================
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+// ==========================================
+// 📜 СКРОЛЛБАР (глобальный)
+// ==========================================
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $color-border;
+  border-radius: $radius-full;
+
+  &:hover {
+    background: $color-text-muted;
+  }
+}
+
+// Firefox
+* {
+  scrollbar-width: thin;
+  scrollbar-color: $color-border transparent;
+}
+
+// ==========================================
+// 🏗 КОРНЕВОЙ КОНТЕЙНЕР REACT
+// ==========================================
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}

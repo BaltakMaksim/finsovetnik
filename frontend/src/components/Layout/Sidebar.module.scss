@@ -1,0 +1,93 @@
+// src/components/Layout/Sidebar.module.scss
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.sidebar {
+  width: $sidebar-width;
+  height: 100vh;
+  background: $color-surface;
+  border-right: 1px solid $color-border;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+  flex-shrink: 0;
+}
+
+.logo {
+  @include heading-2;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0 0.75rem;
+  margin-bottom: 2rem;
+  color: $color-primary;
+
+  svg {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.navItem {
+  @include button-ghost;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+
+  svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: $color-surface-hover;
+    color: $color-text;
+  }
+}
+
+.navItemActive {
+  background: $color-primary-light;
+  color: $color-primary;
+  font-weight: $font-weight-medium;
+
+  &:hover {
+    background: $color-primary-light;
+    color: $color-primary;
+  }
+}
+
+.status {
+  @include text-small;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  margin-top: auto;
+  border-top: 1px solid $color-border;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: $radius-full;
+  flex-shrink: 0;
+}
+
+.connected {
+  background: $color-success;
+}
+
+.disconnected {
+  background: $color-error;
+}

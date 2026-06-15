@@ -1,0 +1,37 @@
+// src/components/ui/Button.module.scss
+@use '../../styles/mixins' as *;
+
+.button {
+  @include button-base;
+}
+
+.primary {
+  @include button-primary;
+}
+
+.secondary {
+  @include button-secondary;
+}
+
+.ghost {
+  @include button-ghost;
+}
+
+.sm {
+  padding: 0.375rem 0.75rem;
+  font-size: $font-size-xs;
+}
+
+.md {
+  padding: 0.625rem 1.25rem;
+  font-size: $font-size-sm;
+}
+
+.lg {
+  padding: 0.875rem 1.5rem;
+  font-size: $font-size-base;
+}
+
+.fullWidth {
+  width: 100%;
+}

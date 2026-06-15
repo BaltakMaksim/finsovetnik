@@ -1,0 +1,24 @@
+// src/App.module.scss
+@use './styles/variables' as *;
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+  background: $color-bg;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; // Чтобы скроллился только чат, а не вся страница
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: $font-size-xl;
+  color: $color-text-muted;
+}

@@ -30,9 +30,9 @@
 - **EdgeTTS** — генерация голоса (Text-to-Speech).
 - **OpenCV / Pyzbar** — парсинг QR-кодов.
 
-### ⚙️ Backend (Java)
+### ⚙️ Backend (Java 21)
 *Отвечает за логику, деньги и связь.*
-- **Spring Boot 3** — основной сервер.
+- **Spring Boot 4** — основной сервер.
 - **PostgreSQL** — надежное хранение транзакций.
 - **WebSockets** — мгновенная доставка сообщений в чат.
 - **Spring Security** — защита данных.
