@@ -1,0 +1,58 @@
+# ==========================================
+# ОБЩИЕ ФАЙЛЫ И IDE
+# ==========================================
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# PYTHON (ai-service)
+# ==========================================
+ai-service/venv/
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/*.pyc
+ai-service/*.pyo
+ai-service/.pytest_cache/
+ai-service/.mypy_cache/
+
+# ==========================================
+# JAVA / SPRING BOOT (backend)
+# ==========================================
+backend/target/
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+backend/*.class
+backend/*.jar
+backend/*.log
+
+# ==========================================
+# NODE.JS / REACT (frontend)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.next/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# ==========================================
+# БЕЗОПАСНОСТЬ (НИКОГДА НЕ КОММИТИТЬ!)
+# ==========================================
+# Игнорируем все .env файлы с секретами
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Оставляем только пример для документации
+!.env.example
