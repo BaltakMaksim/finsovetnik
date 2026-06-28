@@ -4,8 +4,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import ru.finsovetnik.backend.entity.Transaction;
+import ru.finsovetnik.backend.enums.TransactionType;
 import ru.finsovetnik.backend.repository.TransactionRepository;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,37 +41,59 @@ public class AiClientService {
         // 2. Сохраняем в базу данных
         saveTransactions(aiResponse);
 
-        return aiResponse;
+        Map<String, Object> response = new HashMap<>();
+        response.put("is_financial", aiResponse.get("is_financial"));
+        response.put("transactions", aiResponse.get("transactions"));
+        response.put("text", aiResponse.get("reply")); 
+        return response;
     }
 
     @SuppressWarnings("unchecked")
     private void saveTransactions(Map<String, Object> aiResponse) {
-        try {
-            Boolean isFinancial = (Boolean) aiResponse.get("is_financial");
-            if (isFinancial == null || !isFinancial) {
-                System.out.println("⏭️ Не финансовая операция, пропускаем сохранение");
-                return;
-            }
-
-            List<Map<String, Object>> transactions = (List<Map<String, Object>>) aiResponse.get("transactions");
-            if (transactions == null || transactions.isEmpty()) {
-                return;
-            }
-
-            for (Map<String, Object> t : transactions) {
-                Transaction transaction = new Transaction();
-                transaction.setAmount(((Number) t.get("amount")).doubleValue());
-                transaction.setCategory((String) t.get("category"));
-                transaction.setOwner((String) t.get("owner"));
-                transaction.setReply((String) t.get("reply"));
-
-                transactionRepository.save(transaction);
-                System.out.println("💾 Сохранено в БД: " + t.get("amount") + "₽ | " + t.get("category") + " | " + t.get("owner"));
-            }
-
-        } catch (Exception e) {
-            System.err.println("❌ Ошибка сохранения в БД: " + e.getMessage());
-            e.printStackTrace();
+    try {
+        Boolean isFinancial = (Boolean) aiResponse.get("is_financial");
+        if (isFinancial == null || !isFinancial) {
+            System.out.println("⏭️ Не финансовая операция, пропускаем сохранение");
+            return;
         }
+
+        List<Map<String, Object>> transactions = (List<Map<String, Object>>) aiResponse.get("transactions");
+        if (transactions == null || transactions.isEmpty()) {
+            System.out.println("⚠️ Список транзакций пуст");
+            return;
+        }
+
+        for (Map<String, Object> t : transactions) {
+            Transaction transaction = new Transaction();
+            
+            // Базовые поля
+            transaction.setAmount(((Number) t.get("amount")).doubleValue());
+            transaction.setCategory((String) t.get("category"));
+            transaction.setOwner((String) t.get("owner"));
+            transaction.setReply((String) t.get("reply"));
+            
+            String typeStr = (String) t.get("type");
+            if (typeStr != null) {
+                try {
+                    transaction.setType(TransactionType.valueOf(typeStr.toUpperCase()));
+                } catch (IllegalArgumentException e) {
+                    System.err.println("⚠️ Неизвестный тип: " + typeStr + ", ставлю EXPENSE по умолчанию");
+                    transaction.setType(TransactionType.EXPENSE);
+                }
+            } else {
+                transaction.setType(TransactionType.EXPENSE); // По умолчанию
+            }
+            
+            transaction.setIsFinancial(true);
+
+            transactionRepository.save(transaction);
+            System.out.println("💾 Сохранено: " + transaction.getType() + " " 
+                + t.get("amount") + "₽ | " + t.get("category") + " | " + t.get("owner"));
+        }
+
+    } catch (Exception e) {
+        System.err.println("❌ Ошибка сохранения в БД: " + e.getMessage());
+        e.printStackTrace();
     }
+}
 }

@@ -1,17 +1,22 @@
 // src/store/useChatStore.ts
 import { create } from 'zustand';
 import { wsService } from '@services/websocket';
-
+export enum TypeTransaction{
+  INCOME = "INCOME",
+  EXPONSE ="EXPENSE",
+}
 export interface Transaction {
   amount: number;
   category: string;
   owner: string;
+  type: TypeTransaction
 }
 
 export interface Message {
   id: string;
   text: string;
   sender: 'user' | 'ai';
+  is_financial?: boolean,
   timestamp: number;
   transactions?: Transaction[];
 }
@@ -39,8 +44,9 @@ export const useChatStore = create<ChatState>((set) => ({
       (response: Record<string, unknown>) => {
         const aiMessage: Message = {
           id: crypto.randomUUID(),
-          text: (response.reply as string) || 'Нет ответа',
+          text: (response.text as string) || 'Нет ответа',
           sender: 'ai',
+          is_financial: response.is_financial as boolean,
           timestamp: Date.now(),
           transactions: response.transactions as Transaction[] | undefined,
         };

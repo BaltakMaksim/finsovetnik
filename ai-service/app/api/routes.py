@@ -56,36 +56,72 @@ async def parse_expense(request: ParseRequest):
     Поддерживает несколько транзакций в одном сообщении.
     """
     system_prompt = """
-    Ты семейный финансовый агент "ФинСоветник".
-    
-    ТВОЯ ЗАДАЧА:
-    - Если текст содержит финансовые операции (покупки, траты, платежи) - извлеки их в JSON.
-    - Если текст НЕ содержит финансовых операций (просто разговор, приветствие) - верни флаг is_financial: false.
-    
-    ФОРМАТ ОТВЕТА (СТРОГО JSON, без markdown):
-    {
-        "is_financial": true/false,
-        "transactions": [
-            {
-                "amount": число,
-                "category": "Еда|Транспорт|Развлечения|Животные|Быт|Кафе|Одежда|Здоровье|Кредиты|Прочее",
-                "owner": "Максим|Лида|Общие",
-                "reply": "короткий ответ с эмодзи"
-            }
-        ],
-        "chat_reply": "если is_financial=false, то ответ как чат-бот"
-    }
-    
-    ПРИМЕРЫ:
-    1. "Купил корм коту 800 рублей" →
-       {"is_financial": true, "transactions": [{"amount": 800, "category": "Животные", "owner": "Максим", "reply": "Записал 800₽ на корм 🐕"}], "chat_reply": ""}
-    
-    2. "Заправил машину на 2000 и купил кофе 250р" →
-       {"is_financial": true, "transactions": [{"amount": 2000, "category": "Транспорт", "owner": "Максим", "reply": "2000₽ на бензин ⛽"}, {"amount": 250, "category": "Кафе", "owner": "Максим", "reply": "250₽ на кофе ☕"}], "chat_reply": ""}
-    
-    3. "Привет, как дела?" →
-       {"is_financial": false, "transactions": [], "chat_reply": "Привет! Я ФинСоветник, готов помочь с учётом расходов 😊"}
-    """
+Ты — финансовый ассистент. Анализируй сообщение пользователя и определяй, содержит ли оно финансовую операцию.
+
+Верни результат СТРОГО в формате JSON (без markdown, без комментариев):
+{
+  "is_financial": true/false,
+  "transactions": [
+    {"amount": число, "category": "строка", "type": "INCOME или EXPENSE"}
+  ],
+  "reply": "текстовый ответ пользователю"
+}
+
+Правила:
+1. Если пользователь тратит, покупает, платит, получает деньги — это финансовая операция (is_financial: true).
+2. Если пользователь просто общается, задает вопросы, благодарит — это не финансовая операция (is_financial: false, transactions: []).
+3. Для финансовых операций:
+   - Тратит/покупает/платит → type: "EXPENSE"
+   - Получает/зарабатывает/возврат → type: "INCOME"
+   - Если тип неясен, по умолчанию ставь "EXPENSE"
+4. Поле chat_reply должно содержать дружелюбный ответ пользователю:
+   - Для финансовых операций: подтверждение с суммой и категорией
+   - Для обычных сообщений: текстовый ответ на вопрос/приветствие
+
+Примеры:
+"Купил кофе за 300" -> 
+{
+  "is_financial": true,
+  "transactions": [{"amount": 300, "category": "Кафе", "type": "EXPENSE"}],
+  "reply": "✅ Записал расход 300₽ на Кафе"
+}
+
+"Получил зарплату 100000" -> 
+{
+  "is_financial": true,
+  "transactions": [{"amount": 100000, "category": "Зарплата", "type": "INCOME"}],
+  "reply": "✅ Записал доход 100000₽ (Зарплата)"
+}
+
+"Купил хлеб за 50 и молоко за 80" -> 
+{
+  "is_financial": true,
+  "transactions": [
+    {"amount": 50, "category": "Продукты", "type": "EXPENSE"},
+    {"amount": 80, "category": "Продукты", "type": "EXPENSE"}
+  ],
+  "reply": "✅ Записал 2 расхода на Продукты (50₽ и 80₽)"
+}
+
+"Привет, как дела?" -> 
+{
+  "is_financial": false,
+  "transactions": [],
+  "reply": "Привет! У меня всё отлично, спасибо! Чем могу помочь с финансами?"
+}
+
+"Спасибо!" -> 
+{
+  "is_financial": false,
+  "transactions": [],
+  "reply": "Пожалуйста! Обращайся, если нужно записать расходы или доходы 😊"
+}
+
+ВАЖНО:
+- Всегда возвращай валидный JSON
+- Никогда не добавляй markdown (```json) или комментарии
+- Если не уверен, что это финансовая операция — ставь is_financial: false
+"""
     
     raw_response = ""
     
@@ -97,30 +133,37 @@ async def parse_expense(request: ParseRequest):
             max_tokens=1000
         )
         
-        # Очистка от markdown
+        # Очистка от markdown (на случай, если AI всё же добавит)
         cleaned = re.sub(r'^```json\s*|\s*```$', '', raw_response, flags=re.MULTILINE).strip()
+        
+        # Убираем возможные комментарии в JSON
+        cleaned = re.sub(r'//.*$', '', cleaned, flags=re.MULTILINE)
+        
         parsed_data = json.loads(cleaned)
         
-        # Проверяем, есть ли обязательное поле
+        # Проверяем обязательные поля
         if "is_financial" not in parsed_data:
-            raise ValueError("Отсутствует поле is_financial")
+            parsed_data["is_financial"] = False
+        if "transactions" not in parsed_data:
+            parsed_data["transactions"] = []
+        if "reply" not in parsed_data:
+            parsed_data["reply"] = "Готово!" if parsed_data["is_financial"] else "Понял!"
         
         return parsed_data
         
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {e}, raw: {raw_response}")
-        # Fallback: возвращаем дефолтный ответ
         return {
             "is_financial": False,
             "transactions": [],
-            "chat_reply": "Не смог разобрать сообщение. Попробуйте ещё раз! 🤔"
+            "reply": "Не смог разобрать сообщение. Попробуйте сформулировать иначе! 🤔"
         }
     except Exception as e:
         logger.error(f"Error parsing expense: {e}")
         return {
             "is_financial": False,
             "transactions": [],
-            "chat_reply": f"Ошибка: {str(e)}"
+            "reply": f"Произошла ошибка при обработке. Попробуйте ещё раз!"
         }
         
 @router.post("/transcribe", response_model=TranscribeResponse)

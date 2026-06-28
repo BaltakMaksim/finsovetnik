@@ -17,7 +17,6 @@
 }
 
 .bubble {
-  max-width: 75%;
   padding: 0.875rem 1.125rem;
   font-size: $font-size-base;
   line-height: $line-height-relaxed;
@@ -59,6 +58,9 @@
 
 .transactionTag {
   @include badge-success;
+}
+.transactionTagExp {
+  @include badge-error;
 }
 
 @keyframes fadeIn {
