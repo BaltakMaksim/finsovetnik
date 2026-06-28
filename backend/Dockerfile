@@ -1,27 +1,26 @@
-FROM eclipse-temurin:21-jdk
+# Build stage
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
-# Копируем файлы сборки
-COPY mvnw pom.xml ./
-COPY .mvn .mvn
+# Сначала копируем только pom.xml (для кэширования зависимостей)
+COPY pom.xml .
 
-# Проверяем, что скопировалось
-RUN ls -la && ls -la .mvn
+# Копируем весь исходный код
+COPY . .
 
-# Копируем исходники
-COPY src src
+# Собираем проект
+RUN mvn clean package -DskipTests
 
-# Делаем mvnw исполняемым
-RUN chmod +x mvnw
+# Run stage
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
 
-# Собираем с выводом всех ошибок
-RUN ./mvnw clean package -DskipTests -B
-
-# Проверяем, что JAR создался
-RUN ls -la target/
-
-# Копируем JAR
-RUN cp target/*.jar app.jar
+# Копируем собранный jar
+COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
