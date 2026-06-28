@@ -60,17 +60,20 @@ class WebSocketService {
   /**
    * Отправляет сообщение в чат
    */
-  sendMessage(text: string): void {
-    if (!this.client?.connected) {
-      console.warn('⚠️ WebSocket не подключен');
-      return;
-    }
-
-    this.client.publish({
-      destination: '/app/chat.message',
-      body: JSON.stringify({ text }),
-    });
+  sendMessage(text: string, userId?: number | null): void {
+  if (!this.client?.connected) {
+    console.warn('⚠️ WebSocket не подключен');
+    return;
   }
+
+  this.client.publish({
+    destination: '/app/chat.message',
+    body: JSON.stringify({ 
+      text,
+      user_id: userId 
+    }),
+  });
+}
 
   /**
    * Отключается от сервера

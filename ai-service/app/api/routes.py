@@ -6,6 +6,7 @@ from app.services.qr_parser import parse_qr_code
 import json
 import re
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,7 +35,33 @@ class QRParseResponse(BaseModel):
     raw_data: str
     amount: float | None
     date: str | None
-    fn: str | None  # фискальный номер
+    fn: str | None
+
+class AuthChatRequest(BaseModel):
+    session_id: str
+    text: str
+
+# =========================================================================
+# СЛОВАРЬ ДЛЯ SEED PHRASE (100 простых русских слов)
+# =========================================================================
+
+SEED_WORD_LIST = [
+    "яблоко", "река", "солнце", "книга", "стол", "окно", "дерево", "кошка", 
+    "музыка", "город", "ветер", "звезда", "дорога", "море", "гора", "лес", 
+    "дом", "машина", "чашка", "телефон", "ключ", "часы", "лампа", "зеркало",
+    "подушка", "ковёр", "картина", "цветок", "птица", "рыба", "собака", "лошадь",
+    "корова", "свинья", "утка", "гусь", "заяц", "волк", "медведь", "лиса",
+    "тигр", "слон", "жираф", "обезьяна", "попугай", "ворона", "орёл", "акула",
+    "кит", "дельфин", "черепаха", "краб", "медуза", "планета", "луна",
+    "комета", "ракета", "самолёт", "поезд", "корабль", "велосипед", "самокат",
+    "коньки", "лыжи", "мяч", "ручка", "карандаш", "ножницы", "клей",
+    "бумага", "картон", "ткань", "нитка", "иголка", "пуговица", "молния", "карман",
+    "шапка", "шарф", "перчатки", "ботинки", "носки", "рубашка", "брюки", "платье",
+    "юбка", "куртка", "пальто", "шуба", "свитер", "жилет", "галстук", "ремень"
+]
+
+# Временное хранилище сессий
+active_sessions = {}
 
 # =========================================================================
 # ЭНДПОИНТЫ
@@ -42,7 +69,7 @@ class QRParseResponse(BaseModel):
 
 @router.get("/")
 async def root():
-    """Health check - проверка работоспособности сервиса"""
+    """Health check"""
     return {
         "service": "ФинСоветник AI Service",
         "status": "running",
@@ -51,10 +78,7 @@ async def root():
 
 @router.post("/parse")
 async def parse_expense(request: ParseRequest):
-    """
-    Распознавание финансовых операций из текста.
-    Поддерживает несколько транзакций в одном сообщении.
-    """
+    """Распознавание финансовых операций из текста."""
     system_prompt = """
 Ты — финансовый ассистент. Анализируй сообщение пользователя и определяй, содержит ли оно финансовую операцию.
 
@@ -74,53 +98,11 @@ async def parse_expense(request: ParseRequest):
    - Тратит/покупает/платит → type: "EXPENSE"
    - Получает/зарабатывает/возврат → type: "INCOME"
    - Если тип неясен, по умолчанию ставь "EXPENSE"
-4. Поле chat_reply должно содержать дружелюбный ответ пользователю:
-   - Для финансовых операций: подтверждение с суммой и категорией
-   - Для обычных сообщений: текстовый ответ на вопрос/приветствие
-
-Примеры:
-"Купил кофе за 300" -> 
-{
-  "is_financial": true,
-  "transactions": [{"amount": 300, "category": "Кафе", "type": "EXPENSE"}],
-  "reply": "✅ Записал расход 300₽ на Кафе"
-}
-
-"Получил зарплату 100000" -> 
-{
-  "is_financial": true,
-  "transactions": [{"amount": 100000, "category": "Зарплата", "type": "INCOME"}],
-  "reply": "✅ Записал доход 100000₽ (Зарплата)"
-}
-
-"Купил хлеб за 50 и молоко за 80" -> 
-{
-  "is_financial": true,
-  "transactions": [
-    {"amount": 50, "category": "Продукты", "type": "EXPENSE"},
-    {"amount": 80, "category": "Продукты", "type": "EXPENSE"}
-  ],
-  "reply": "✅ Записал 2 расхода на Продукты (50₽ и 80₽)"
-}
-
-"Привет, как дела?" -> 
-{
-  "is_financial": false,
-  "transactions": [],
-  "reply": "Привет! У меня всё отлично, спасибо! Чем могу помочь с финансами?"
-}
-
-"Спасибо!" -> 
-{
-  "is_financial": false,
-  "transactions": [],
-  "reply": "Пожалуйста! Обращайся, если нужно записать расходы или доходы 😊"
-}
+4. Поле reply должно содержать дружелюбный ответ пользователю.
 
 ВАЖНО:
 - Всегда возвращай валидный JSON
-- Никогда не добавляй markdown (```json) или комментарии
-- Если не уверен, что это финансовая операция — ставь is_financial: false
+- Никогда не добавляй markdown или комментарии
 """
     
     raw_response = ""
@@ -133,15 +115,11 @@ async def parse_expense(request: ParseRequest):
             max_tokens=1000
         )
         
-        # Очистка от markdown (на случай, если AI всё же добавит)
         cleaned = re.sub(r'^```json\s*|\s*```$', '', raw_response, flags=re.MULTILINE).strip()
-        
-        # Убираем возможные комментарии в JSON
         cleaned = re.sub(r'//.*$', '', cleaned, flags=re.MULTILINE)
         
         parsed_data = json.loads(cleaned)
         
-        # Проверяем обязательные поля
         if "is_financial" not in parsed_data:
             parsed_data["is_financial"] = False
         if "transactions" not in parsed_data:
@@ -168,32 +146,21 @@ async def parse_expense(request: ParseRequest):
         
 @router.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(file: UploadFile = File(...)):
-    """
-    Распознавание голосового сообщения (Speech-to-Text).
-    Принимает аудиофайл (ogg, mp3, wav) → возвращает текст.
-    """
+    """Распознавание голосового сообщения."""
     try:
-        # Чтение файла
         audio_data = await file.read()
-        
-        # Распознавание через Whisper
         text = await transcribe_audio(audio_data)
-        
         logger.info(f"🎤 Transcribed: {text}")
         return TranscribeResponse(text=text)
-        
     except Exception as e:
         logger.error(f"Transcription error: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка распознавания: {str(e)}")
 
 @router.post("/tts", response_model=TTSResponse)
-async def text_to_speech_endpoint(text: str):
-    """
-    Преобразование текста в голос (Text-to-Speech).
-    Возвращает base64-encoded аудио для озвучки ответов агента.
-    """
+async def text_to_speech_endpoint(request: ParseRequest):
+    """Преобразование текста в голос."""
     try:
-        audio_base64 = await text_to_speech(text)
+        audio_base64 = await text_to_speech(request.text)
         return TTSResponse(audio_base64=audio_base64, format="mp3")
     except Exception as e:
         logger.error(f"TTS error: {e}")
@@ -201,36 +168,21 @@ async def text_to_speech_endpoint(text: str):
 
 @router.post("/qr/parse", response_model=QRParseResponse)
 async def parse_qr(file: UploadFile = File(...)):
-    """
-    Парсинг QR-кода с чека.
-    Извлекает фискальные данные: сумму, дату, фискальный номер.
-    """
+    """Парсинг QR-кода с чека."""
     try:
-        # Чтение изображения
         image_data = await file.read()
-        
-        # Парсинг QR
         result = await parse_qr_code(image_data)
-        
         return QRParseResponse(**result)
-        
     except Exception as e:
         logger.error(f"QR parse error: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка чтения QR: {str(e)}")
 
 @router.post("/chat")
 async def general_chat(request: ParseRequest):
-    """
-    Общий чат с AI-агентом (не финансовые вопросы).
-    Для общения, советов, вопросов о бюджете.
-    """
+    """Общий чат с AI-агентом."""
     system_prompt = """
-    Ты дружелюбный семейный финансовый консультант "ФинСоветник".
+    Ты дружелюбный семейный финансовый консультант "ФинСоветник AI".
     Отвечай кратко, тепло, с юмором. Используй эмодзи.
-    
-    Ты помогаешь семье наладить финансы.
-    Если спрашивают про бюджет - давай общие советы, но не давай конкретных цифр
-    (ты не имеешь доступа к базе данных).
     """
     
     try:
@@ -246,3 +198,171 @@ async def general_chat(request: ParseRequest):
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# =========================================================================
+# ЭНДПОИНТ ДЛЯ РЕГИСТРАЦИИ/ВХОДА
+# =========================================================================
+@router.post("/auth/chat")
+async def auth_chat(request: AuthChatRequest):
+    session_id = request.session_id
+    user_text = request.text.lower().strip()
+    
+    # Создаём сессию, если её нет
+    if session_id not in active_sessions:
+        active_sessions[session_id] = {
+            "state": "ASK_NAME",
+            "username": None,
+            "seed_phrase": None,
+            "is_existing": False
+        }
+    
+    session = active_sessions[session_id]
+    
+    # =========================================================================
+    # СОСТОЯНИЕ 1: Спрашиваем имя
+    # =========================================================================
+    if session["state"] == "ASK_NAME":
+        session["username"] = user_text.capitalize()
+        session["state"] = "ASK_IF_EXISTING"
+        
+        return {
+            "reply": f"Приятно познакомиться, {session['username']}! 🎉 Ты уже регистрировался у нас раньше?",
+            "state": "ASK_IF_EXISTING"
+        }
+
+    # =========================================================================
+    # СОСТОЯНИЕ 2: Спрашиваем, новый ли он
+    # =========================================================================
+    elif session["state"] == "ASK_IF_EXISTING":
+        if any(word in user_text for word in ["да", "ага", "уже", "вернулся", "входил"]):
+            session["is_existing"] = True
+            session["state"] = "VERIFY_SEED"
+            return {
+                "reply": f"Рад тебя видеть снова, {session['username']}! 🙌 Назови свою фразу доступа (12 слов).",
+                "state": "VERIFY_SEED"
+            }
+        elif any(word in user_text for word in ["нет", "новый", "впервые", "первый раз"]):
+            session["is_existing"] = False
+            session["state"] = "WAITING_CONFIRMATION"
+            
+            seed_words = random.sample(SEED_WORD_LIST, 12)
+            session["seed_phrase"] = " ".join(seed_words)
+            
+            return {
+                "reply": f"Отлично! Тогда давай создадим твой аккаунт. 🔑 Запиши эти 12 слов в надежном месте:\n\n🔑 {session['seed_phrase']}\n\nКогда запишешь, напиши 'Готово'.",
+                "state": "WAITING_CONFIRMATION",
+                "seed_words": seed_words
+            }
+        else:
+            return {
+                "reply": "Ответь, пожалуйста, 'Да' или 'Нет'. Ты уже регистрировался у нас?",
+                "state": "ASK_IF_EXISTING"
+            }
+
+    # =========================================================================
+    # СОСТОЯНИЕ 3: Ждём подтверждения записи (только для НОВЫХ)
+    # =========================================================================
+    elif session["state"] == "WAITING_CONFIRMATION":
+        if "готово" in user_text or "записал" in user_text:
+            session["state"] = "VERIFY_SEED"
+            return {
+                "reply": "Отлично! Теперь для проверки напиши или продиктуй эти 12 слов по порядку.",
+                "state": "VERIFY_SEED"
+            }
+        else:
+            return {
+                "reply": "Напиши 'Готово', когда запишешь слова.",
+                "state": "WAITING_CONFIRMATION"
+            }
+
+    # =========================================================================
+    # СОСТОЯНИЕ 4: Проверяем seed phrase
+    # =========================================================================
+    elif session["state"] == "VERIFY_SEED":
+        # ✅ Если пользователь передумал и хочет зарегистрироваться заново
+        if any(word in user_text for word in ["заново", "новый", "регистрация", "другой", "не помню", "забыл"]):
+            # Сбрасываем сессию
+            active_sessions[session_id] = {
+                "state": "ASK_NAME",
+                "username": None,
+                "seed_phrase": None,
+                "is_existing": False
+            }
+            return {
+                "reply": "Хорошо! Давай начнём сначала. 🔄 Как тебя зовут?",
+                "state": "ASK_NAME"
+            }
+        
+        clean_text = re.sub(r'[^\w\s]', '', user_text)
+        user_words = clean_text.split()
+        
+        # Для НОВОГО пользователя
+        if not session.get("is_existing", False):
+            stored_words = session["seed_phrase"].split() if session["seed_phrase"] else []
+            
+            if user_words == stored_words:
+                session["state"] = "AUTHENTICATED"
+                return {
+                    "reply": f"✅ Всё верно! Добро пожаловать, {session['username']}!",
+                    "state": "AUTHENTICATED",
+                    "username": session["username"],
+                    "authenticated": True,
+                    "seed_phrase": session["seed_phrase"]
+                }
+            else:
+                return {
+                    "reply": f"❌ Слова не совпадают. Попробуй еще раз:\n\n🔑 {session['seed_phrase']}",
+                    "state": "VERIFY_SEED"
+                }
+        else:
+            # Для СУЩЕСТВУЮЩЕГО пользователя — отправляем на проверку в Java
+            return {
+                "reply": "",
+                "state": "VERIFY_EXISTING",
+                "username": session["username"],
+                "seed_phrase": " ".join(user_words),
+                "check_existing": True
+            }
+
+    # =========================================================================
+    # СОСТОЯНИЕ 5: Проверка не удалась — предлагаем варианты
+    # =========================================================================
+    elif session["state"] == "OFFER_REREGISTER":
+        # Пользователь хочет попробовать ещё раз
+        if any(word in user_text for word in ["да", "попробую", "ещё", "еще", "повторить"]):
+            session["state"] = "VERIFY_SEED"
+            return {
+                "reply": "Хорошо, давай попробуем ещё раз. Назови свою фразу доступа (12 слов):",
+                "state": "VERIFY_SEED"
+            }
+        # Пользователь хочет зарегистрироваться заново
+        elif any(word in user_text for word in ["нет", "заново", "новый", "регистрация", "другой", "забыл"]):
+            # Сбрасываем сессию
+            active_sessions[session_id] = {
+                "state": "ASK_NAME",
+                "username": None,
+                "seed_phrase": None,
+                "is_existing": False
+            }
+            return {
+                "reply": "Хорошо! Давай начнём сначала. 🔄 Как тебя зовут?",
+                "state": "ASK_NAME"
+            }
+        else:
+            return {
+                "reply": "Ответь 'Да' (попробовать ещё раз) или 'Нет' (зарегистрироваться заново).",
+                "state": "OFFER_REREGISTER"
+            }
+
+    # =========================================================================
+    # СОСТОЯНИЕ 6: Успешная аутентификация
+    # =========================================================================
+    elif session["state"] == "AUTHENTICATED":
+        return {
+            "reply": f"{session['username']}, ты уже вошел!",
+            "state": "AUTHENTICATED",
+            "username": session["username"],
+            "authenticated": True
+        }
+        
+    return {"reply": "Я тебя не понимаю.", "state": "ERROR"}

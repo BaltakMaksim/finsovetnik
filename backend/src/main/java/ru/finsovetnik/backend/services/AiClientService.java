@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import ru.finsovetnik.backend.entity.Transaction;
+import ru.finsovetnik.backend.entity.User;
 import ru.finsovetnik.backend.enums.TransactionType;
 import ru.finsovetnik.backend.repository.TransactionRepository;
 
@@ -28,28 +29,27 @@ public class AiClientService {
     }
 
     @SuppressWarnings("unchecked")
-    public Map<String, Object> parseExpense(String text) {
-        String url = aiServiceUrl + "/parse";
-        Map<String, String> requestBody = Map.of("text", text);
+public Map<String, Object> parseExpense(String text, Long userId) {
+    String url = aiServiceUrl + "/parse";
+    Map<String, String> requestBody = Map.of("text", text);
 
-        System.out.println("📤 Отправка в AI: " + text);
+    System.out.println("📤 Отправка в AI: " + text);
 
-        // 1. Получаем ответ от AI
-        Map<String, Object> aiResponse = restTemplate.postForObject(url, requestBody, Map.class);
-        System.out.println("📥 Получено от AI: " + aiResponse);
+    Map<String, Object> aiResponse = restTemplate.postForObject(url, requestBody, Map.class);
+    System.out.println("📥 Получено от AI: " + aiResponse);
 
-        // 2. Сохраняем в базу данных
-        saveTransactions(aiResponse);
+    // Передаём userId для привязки транзакций
+    saveTransactions(aiResponse, userId);
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("is_financial", aiResponse.get("is_financial"));
-        response.put("transactions", aiResponse.get("transactions"));
-        response.put("text", aiResponse.get("reply")); 
-        return response;
-    }
+    Map<String, Object> response = new HashMap<>();
+    response.put("is_financial", aiResponse.get("is_financial"));
+    response.put("transactions", aiResponse.get("transactions"));
+    response.put("text", aiResponse.get("reply")); 
+    return response;
+}
 
-    @SuppressWarnings("unchecked")
-    private void saveTransactions(Map<String, Object> aiResponse) {
+@SuppressWarnings("unchecked")
+private void saveTransactions(Map<String, Object> aiResponse, Long userId) {
     try {
         Boolean isFinancial = (Boolean) aiResponse.get("is_financial");
         if (isFinancial == null || !isFinancial) {
@@ -66,7 +66,6 @@ public class AiClientService {
         for (Map<String, Object> t : transactions) {
             Transaction transaction = new Transaction();
             
-            // Базовые поля
             transaction.setAmount(((Number) t.get("amount")).doubleValue());
             transaction.setCategory((String) t.get("category"));
             transaction.setOwner((String) t.get("owner"));
@@ -77,18 +76,24 @@ public class AiClientService {
                 try {
                     transaction.setType(TransactionType.valueOf(typeStr.toUpperCase()));
                 } catch (IllegalArgumentException e) {
-                    System.err.println("⚠️ Неизвестный тип: " + typeStr + ", ставлю EXPENSE по умолчанию");
                     transaction.setType(TransactionType.EXPENSE);
                 }
             } else {
-                transaction.setType(TransactionType.EXPENSE); // По умолчанию
+                transaction.setType(TransactionType.EXPENSE);
             }
             
             transaction.setIsFinancial(true);
 
+            // ✅ НОВОЕ: Привязываем к пользователю
+            if (userId != null) {
+                User user = new User();
+                user.setId(userId);
+                transaction.setUser(user);
+            }
+
             transactionRepository.save(transaction);
             System.out.println("💾 Сохранено: " + transaction.getType() + " " 
-                + t.get("amount") + "₽ | " + t.get("category") + " | " + t.get("owner"));
+                + t.get("amount") + "₽ | " + t.get("category") + " | user_id=" + userId);
         }
 
     } catch (Exception e) {
@@ -96,4 +101,31 @@ public class AiClientService {
         e.printStackTrace();
     }
 }
+@SuppressWarnings("unchecked")
+    public Map<String, Object> authChat(String sessionId, String text) {
+        String url = aiServiceUrl + "/auth/chat";
+        
+        Map<String, String> requestBody = new HashMap<>();
+        requestBody.put("session_id", sessionId);
+        requestBody.put("text", text);
+        
+        System.out.println("🔐 Отправка в AI auth: sessionId=" + sessionId + ", text=" + text);
+        
+        try {
+            Map<String, Object> aiResponse = restTemplate.postForObject(url, requestBody, Map.class);
+            System.out.println("🔐 Получено от AI auth: " + aiResponse);
+            
+            return aiResponse;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Ошибка вызова AI auth: " + e.getMessage());
+            e.printStackTrace();
+            
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("reply", "Произошла ошибка при обработке. Попробуйте ещё раз.");
+            errorResponse.put("state", "ERROR");
+            return errorResponse;
+        }
+    }
+    
 }

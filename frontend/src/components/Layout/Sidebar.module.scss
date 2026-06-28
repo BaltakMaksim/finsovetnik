@@ -91,3 +91,80 @@
 .disconnected {
   background: $color-error;
 }
+
+/* Секция с именем пользователя */
+.userSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin: 12px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.userName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d6a4f;
+}
+
+.userStatus {
+  font-size: 11px;
+  color: #4ade80;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #4ade80;
+    border-radius: 50%;
+  }
+}
+
+.logoutButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #5a0303;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+  }
+}
+
+/* Неактивная вкладка */
+.navItemDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+  position: relative;
+
+  &:hover {
+    background: transparent;
+    transform: none;
+  }
+}
+
+.lockIcon {
+  margin-left: auto;
+  font-size: 12px;
+}

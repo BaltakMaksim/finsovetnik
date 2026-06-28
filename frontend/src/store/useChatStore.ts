@@ -1,46 +1,94 @@
-// src/store/useChatStore.ts
 import { create } from 'zustand';
 import { wsService } from '@services/websocket';
-export enum TypeTransaction{
+import { authService } from '@services/auth';
+
+export enum TypeTransaction {
   INCOME = "INCOME",
-  EXPONSE ="EXPENSE",
+  EXPENSE = "EXPENSE",
 }
+
 export interface Transaction {
   amount: number;
   category: string;
   owner: string;
-  type: TypeTransaction
+  type: TypeTransaction;
 }
 
 export interface Message {
   id: string;
   text: string;
   sender: 'user' | 'ai';
-  is_financial?: boolean,
+  is_financial?: boolean;
   timestamp: number;
   transactions?: Transaction[];
+  seedWords?: string[];
 }
 
 interface ChatState {
   messages: Message[];
   isConnected: boolean;
   isTyping: boolean;
+  isAuthenticated: boolean;
+  username: string | null;
+  userId: number | null;
+  isLoading: boolean; // ✅ НОВОЕ: флаг загрузки при авто-входе
 
-  // Actions
   connect: () => void;
   disconnect: () => void;
   sendMessage: (text: string) => void;
   clearHistory: () => void;
+  checkAuth: () => void;
+  logout: () => void;
 }
 
-export const useChatStore = create<ChatState>((set) => ({
+export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isConnected: false,
   isTyping: false,
+  isAuthenticated: false,
+  username: null,
+  userId: null,
+  isLoading: true, // ✅ Начинаем с загрузки
+
+  checkAuth: async () => {
+    set({ isLoading: true });
+
+    // ✅ Сначала пытаемся войти автоматически
+    const autoLoginResult = await authService.tryAutoLogin();
+
+    if (autoLoginResult) {
+      // Успешный авто-вход
+      set({
+        isLoading: false,
+        isAuthenticated: true,
+        username: autoLoginResult.username,
+        userId: autoLoginResult.userId,
+        messages: [{
+          id: crypto.randomUUID(),
+          text: `Привет, ${autoLoginResult.username}! 👋 Рад тебя снова видеть.`,
+          sender: 'ai',
+          timestamp: Date.now()
+        }]
+      });
+    } else {
+      // Авто-вход не удался — показываем регистрацию
+      set({
+        isLoading: false,
+        isAuthenticated: false,
+        username: null,
+        userId: null,
+        messages: [{
+          id: crypto.randomUUID(),
+          text: 'Привет! Я твой финансовый помощник. Как тебя зовут?',
+          sender: 'ai',
+          timestamp: Date.now()
+        }]
+      });
+    }
+  },
 
   connect: () => {
     wsService.connect(
-      // onMessage: получаем ответ от AI
       (response: Record<string, unknown>) => {
         const aiMessage: Message = {
           id: crypto.randomUUID(),
@@ -56,7 +104,6 @@ export const useChatStore = create<ChatState>((set) => ({
           isTyping: false,
         }));
       },
-      // onStatusChange: обновляем статус подключения
       (connected: boolean) => {
         set({ isConnected: connected });
       }
@@ -68,10 +115,9 @@ export const useChatStore = create<ChatState>((set) => ({
     set({ isConnected: false });
   },
 
-  sendMessage: (text: string) => {
+  sendMessage: async (text: string) => {
     if (!text.trim()) return;
 
-    // Добавляем сообщение пользователя в локальный стейт
     const userMessage: Message = {
       id: crypto.randomUUID(),
       text: text.trim(),
@@ -84,11 +130,78 @@ export const useChatStore = create<ChatState>((set) => ({
       isTyping: true,
     }));
 
-    // Отправляем через WebSocket
-    wsService.sendMessage(text);
+    const state = get();
+
+    if (!state.isAuthenticated) {
+      // Режим регистрации — через HTTP
+      try {
+        const response = await authService.sendMessage(text);
+
+        const aiMessage: Message = {
+          id: crypto.randomUUID(),
+          text: response.reply,
+          sender: 'ai',
+          timestamp: Date.now(),
+          seedWords: response.seed_words,
+        };
+
+        set((s) => ({
+          messages: [...s.messages, aiMessage],
+          isTyping: false,
+        }));
+
+        // ✅ Если аутентификация успешна — сохраняем всё, включая токены
+        if (response.authenticated && response.username && response.user_id && response.access_token && response.refresh_token) {
+          authService.saveAuth(
+            response.username,
+            response.user_id,
+            response.access_token,
+            response.refresh_token
+          );
+          set({
+            isAuthenticated: true,
+            username: response.username,
+            userId: response.user_id,
+          });
+        }
+      } catch (error) {
+        console.error('Ошибка auth:', error);
+        set((s) => ({
+          messages: [
+            ...s.messages,
+            {
+              id: crypto.randomUUID(),
+              text: 'Произошла ошибка. Попробуй ещё раз.',
+              sender: 'ai',
+              timestamp: Date.now(),
+            },
+          ],
+          isTyping: false,
+        }));
+      }
+    } else {
+      // Режим работы — через WebSocket с передачей userId
+      const userId = state.userId;
+      wsService.sendMessage(text, userId);
+    }
   },
 
   clearHistory: () => {
     set({ messages: [] });
+  },
+
+  logout: () => {
+    authService.logout();
+    set({
+      isAuthenticated: false,
+      username: null,
+      userId: null,
+      messages: [{
+        id: crypto.randomUUID(),
+        text: 'Привет! Я твой финансовый помощник. Как тебя зовут?',
+        sender: 'ai',
+        timestamp: Date.now()
+      }]
+    });
   },
 }));

@@ -1,24 +1,18 @@
-# Этап 1: Сборка React
-FROM node:20-alpine AS builder
+# Build stage
+FROM node:20-alpine AS build
 WORKDIR /app
-
 COPY package*.json ./
 RUN npm ci
-
 COPY . .
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
-# Этап 2: Запуск статики через serve
-FROM node:20-alpine
-WORKDIR /app
+# Run stage
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Устанавливаем serve глобально
-RUN npm install -g serve
+EXPOSE 80
 
-# Копируем dist прямо в рабочую директорию контейнера
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-
-# Теперь путь относительный и точно существует в WORKDIR
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["nginx", "-g", "daemon off;"]

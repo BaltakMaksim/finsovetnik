@@ -1,25 +1,50 @@
-// src/components/Chat/Chat.tsx
 import { useEffect, useRef } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Loader2 } from 'lucide-react';
 import { useChatStore } from '@store/useChatStore';
 import { MessageBubble } from './MessageBabble';
 import { ChatInput } from './ChatInput';
 import styles from './Chat.module.scss';
 
 export function Chat() {
-  const { messages, isConnected, isTyping, connect, disconnect, sendMessage } = useChatStore();
+  const {
+    messages,
+    isConnected,
+    isTyping,
+    isAuthenticated,
+    isLoading,
+    connect,
+    disconnect,
+    sendMessage,
+    checkAuth,
+  } = useChatStore();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Подключаемся к WebSocket при монтировании
   useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+    checkAuth();
+  }, [checkAuth]);
 
-  // Автопрокрутка к последнему сообщению
+  useEffect(() => {
+    if (isAuthenticated) {
+      connect();
+      return () => disconnect();
+    }
+  }, [isAuthenticated, connect, disconnect]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
+
+  if (isLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.loadingState}>
+          <Loader2 className={styles.spinner} size={48} />
+          <p>Проверяю, кто ты...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.container}>
@@ -27,7 +52,7 @@ export function Chat() {
         {messages.length === 0 ? (
           <div className={styles.emptyState}>
             <MessageSquare />
-            <p>Напишите сообщение, чтобы начать диалог с AI-ассистентом</p>
+            <p>{isAuthenticated ? 'Напишите сообщение...' : 'Начните диалог с AI-ассистентом'}</p>
           </div>
         ) : (
           messages.map((msg) => (
@@ -41,13 +66,13 @@ export function Chat() {
           </div>
         )}
 
-        {/* Невидимый якорь для автопрокрутки */}
         <div ref={messagesEndRef} />
       </div>
 
       <ChatInput
         onSend={sendMessage}
-        disabled={!isConnected}
+        disabled={!isAuthenticated ? false : !isConnected}
+        placeholder={isAuthenticated ? 'Запиши расход или доход...' : 'Напиши своё имя...'}
       />
     </div>
   );

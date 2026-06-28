@@ -1,6 +1,5 @@
-// src/components/Layout/Sidebar.tsx
-import { NavLink } from 'react-router-dom';
-import { MessageSquare, PieChart, Settings, Wallet } from 'lucide-react';
+import { NavLink} from 'react-router-dom';
+import { MessageSquare, PieChart, Settings, Wallet, LogOut } from 'lucide-react';
 import { useChatStore } from '@store/useChatStore';
 import styles from './Sidebar.module.scss';
 import clsx from 'clsx';
@@ -14,27 +13,59 @@ const navItems = [
 
 export function Sidebar() {
   const isConnected = useChatStore((state) => state.isConnected);
+  const isAuthenticated = useChatStore((state) => state.isAuthenticated);
+  const username = useChatStore((state) => state.username);
+  const logout = useChatStore((state) => state.logout);
 
   return (
     <aside className={styles.sidebar}>
       <div className={styles.logo}>
         <Wallet />
-        ФинСоветник
+        ФинСоветник AI
       </div>
 
+      {/* ✅ Имя пользователя и кнопка выхода */}
+      {isAuthenticated && username && (
+        <div className={styles.userSection}>
+          <div className={styles.userInfo}>
+            <div className={styles.userName}>{username}</div>
+            <div className={styles.userStatus}>В сети</div>
+          </div>
+          <button onClick={logout} className={styles.logoutButton} title="Выйти">
+            <LogOut size={18} />
+          </button>
+        </div>
+      )}
+
       <nav className={styles.nav}>
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              clsx(styles.navItem, isActive && styles.navItemActive)
-            }
-          >
-            <Icon />
-            {label}
-          </NavLink>
-        ))}
+        {navItems.map(({ to, icon: Icon, label }) => {
+          // Все вкладки кроме "Чат" неактивны, если не авторизован
+          //const isDisabled = !isAuthenticated && to !== '/';
+          const isDisabled = true;
+
+          return (
+            <NavLink
+              key={to}
+              to={isDisabled ? '#' : to}
+              className={({ isActive: navActive }) =>
+                clsx(
+                  styles.navItem,
+                  navActive && styles.navItemActive,
+                  isDisabled && styles.navItemDisabled
+                )
+              }
+              onClick={(e) => {
+                if (isDisabled) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              <Icon />
+              {label}
+              {isDisabled && <span className={styles.lockIcon}>🔒</span>}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className={styles.status}>
