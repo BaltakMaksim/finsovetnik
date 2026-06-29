@@ -30,7 +30,7 @@ public class AiClientService {
 
     @SuppressWarnings("unchecked")
 public Map<String, Object> parseExpense(String text, Long userId) {
-    String url = aiServiceUrl + "/parse";
+    String url = aiServiceUrl + "/api/parse";
     Map<String, String> requestBody = Map.of("text", text);
 
     System.out.println("📤 Отправка в AI: " + text);
@@ -103,7 +103,7 @@ private void saveTransactions(Map<String, Object> aiResponse, Long userId) {
 }
 @SuppressWarnings("unchecked")
     public Map<String, Object> authChat(String sessionId, String text) {
-        String url = aiServiceUrl + "/auth/chat";
+        String url = aiServiceUrl + "/api/auth/chat";
         
         Map<String, String> requestBody = new HashMap<>();
         requestBody.put("session_id", sessionId);
