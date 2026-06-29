@@ -1,6 +1,7 @@
-// src/components/Chat/Chat.module.scss
 @use '../../styles/variables' as *;
 @use '../../styles/mixins' as *;
+
+$mobile-breakpoint: 768px;
 
 .container {
   display: flex;
@@ -9,6 +10,13 @@
   max-width: 90%;
   margin: 0 auto;
   width: 100%;
+
+  // ✅ Мобильная адаптация
+  @media (max-width: $mobile-breakpoint) {
+    height: calc(100vh - 60px); // Учитываем мобильный хедер
+    max-width: 100%;
+    margin: 0;
+  }
 }
 
 .messagesArea {
@@ -19,6 +27,12 @@
   flex-direction: column;
 
   @include scrollbar-thin;
+
+  // ✅ Мобильная адаптация
+  @media (max-width: $mobile-breakpoint) {
+    padding: 1rem 0.75rem;
+    padding-top: 4rem;
+  }
 }
 
 .emptyState {
@@ -41,6 +55,19 @@
     max-width: 320px;
     line-height: $line-height-relaxed;
   }
+
+  @media (max-width: $mobile-breakpoint) {
+    padding: 1rem;
+
+    svg {
+      width: 40px;
+      height: 40px;
+    }
+
+    p {
+      font-size: $font-size-base;
+    }
+  }
 }
 
 .typingIndicator {
@@ -48,6 +75,10 @@
   padding: 0 1.5rem 0.5rem;
   font-size: $font-size-xs;
   animation: pulse 1.5s ease-in-out infinite;
+
+  @media (max-width: $mobile-breakpoint) {
+    padding: 0 0.75rem 0.5rem;
+  }
 }
 
 @keyframes pulse {
@@ -64,6 +95,11 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 16px;
   font-weight: 500;
+
+  @media (max-width: $mobile-breakpoint) {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
 }
 
 .logoutButton {
@@ -81,6 +117,12 @@
 
   &:hover {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  @media (max-width: $mobile-breakpoint) {
+    padding: 4px 8px;
+    font-size: 12px;
+    gap: 4px;
   }
 }
 
