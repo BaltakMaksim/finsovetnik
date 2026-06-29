@@ -103,7 +103,7 @@ services:
     container_name: finsovetnik-nginx
     restart: always
     ports:
-      - "${NGINX_HTTP_PORT}:81"
+      - "${NGINX_HTTP_PORT}:80"
       - "${NGINX_HTTPS_PORT}:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
