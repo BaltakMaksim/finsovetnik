@@ -12,8 +12,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    # ports:
-    #   - "127.0.0.1:${POSTGRES_PORT}:5432"
+    ports:
+        - "127.0.0.1:5432:5433"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backups:/backups
