@@ -27,7 +27,7 @@ async def transcribe_audio(audio_data: bytes) -> str:
         audio_buffer.seek(0)
         
         # Распознаём речь
-        segments, _ = WHISPER_MODEL.transcribe(audio_buffer, language="ru", beam_size=5)
+        segments, _ = WHISPER_MODEL.transcribe(audio_buffer, language="ru", beam_size=5, vad_filter=True)
         
         # Собираем текст из всех сегментов
         recognized_text = ""
