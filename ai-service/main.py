@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 # Подключаем роутер
-app.include_router(routes.router, prefix="/api/v1")
+app.include_router(routes.router, prefix="/api")
 
 @app.get("/")
 async def root():
