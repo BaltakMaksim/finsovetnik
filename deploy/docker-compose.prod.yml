@@ -65,8 +65,33 @@ services:
       dockerfile: Dockerfile
     container_name: finsovetnik-ai-service
     restart: always
+    env_file:
+    - .env
     environment:
+    # Помечаем, что мы в Docker
+      DOCKER_ENV: "true"
+      # OpenAI (если переключишься)
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      
+      # Провайдер LLM
+      LLM_PROVIDER: ${LLM_PROVIDER:-yandexgpt}
+      
+      # Ollama (Локальная модель)
+      OLLAMA_URL: ${OLLAMA_URL:-http://localhost:11434/api/generate}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      
+      # YandexGPT (Облачная модель)
+      YANDEX_API_KEY: ${YANDEX_API_KEY}
+      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
+      YANDEX_MODEL: ${YANDEX_MODEL:-yandexgpt-5-lite/latest}
+      
+      # Edge TTS (Озвучка)
+      VOICE: ${VOICE:-ru-RU-DmitryNeural}
+      
+      # Настройки приложения
+      DEBUG: ${DEBUG:-True}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-600}
+      MAX_TEXT_LENGTH: ${MAX_TEXT_LENGTH:-3000}
     # ports:
     #   - "127.0.0.1:${AI_SERVICE_PORT}:8000"  # Только локально!
     volumes:

@@ -4,11 +4,18 @@ from dotenv import load_dotenv
 from typing import Optional
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ENV_PATH = BASE_DIR / ".env"
+# Определяем, в каком режиме работаем
+# В Docker переменная DOCKER_ENV устанавливается автоматически
+IS_DOCKER = os.environ.get('DOCKER_ENV', '').lower() == 'true'
 
+if not IS_DOCKER:
+    # Dev-режим: читаем из локального .env
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    ENV_PATH = BASE_DIR / ".env"
+    if ENV_PATH.exists():
+        load_dotenv(ENV_PATH)
+        print(f" Загружен .env из: {ENV_PATH}")
 
-load_dotenv(dotenv_path=ENV_PATH)
 # LLM Provider
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "yandexgpt")  # "ollama" или "yandexgpt"
 # Ollama
