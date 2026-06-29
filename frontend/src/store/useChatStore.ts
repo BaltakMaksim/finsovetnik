@@ -180,9 +180,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
     } else {
-      // Режим работы — через WebSocket с передачей userId
-      const userId = state.userId;
-      wsService.sendMessage(text, userId);
+
+      wsService.sendMessage(text);
     }
   },
 
