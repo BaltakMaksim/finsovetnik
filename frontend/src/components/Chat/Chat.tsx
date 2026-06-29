@@ -72,7 +72,6 @@ export function Chat() {
       <ChatInput
         onSend={sendMessage}
         disabled={!isAuthenticated ? false : !isConnected}
-        placeholder={isAuthenticated ? 'Запиши расход или доход...' : 'Напиши своё имя...'}
       />
     </div>
   );

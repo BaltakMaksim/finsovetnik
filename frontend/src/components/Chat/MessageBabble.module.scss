@@ -23,12 +23,10 @@ $mobile-breakpoint: 768px;
   line-height: $line-height-relaxed;
   word-wrap: break-word;
   animation: fadeIn 0.3s ease;
-  max-width: 85%; // ✅ Чтобы длинные сообщения не растягивались
 
   @media (max-width: $mobile-breakpoint) {
     padding: 0.75rem 1rem;
     font-size: 15px;
-    max-width: 90%;
   }
 }
 

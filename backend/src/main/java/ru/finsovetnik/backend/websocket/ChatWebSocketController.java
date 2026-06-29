@@ -1,50 +1,67 @@
 package ru.finsovetnik.backend.websocket;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
 import ru.finsovetnik.backend.services.AiClientService;
 
+import java.security.Principal;
 import java.util.Map;
 
 @Controller
 public class ChatWebSocketController {
 
+    private static final Logger logger = LoggerFactory.getLogger(ChatWebSocketController.class);
     private final AiClientService aiClientService;
 
     public ChatWebSocketController(AiClientService aiClientService) {
         this.aiClientService = aiClientService;
     }
 
-    /**
-     * Обрабатывает сообщение из чата
-     * Клиент отправляет на /app/chat.message
-     * Сервер отвечает всем подписчикам на /topic/chat.responses
-     * 
-     * Теперь принимает user_id для привязки транзакций к пользователю
-     */
     @MessageMapping("/chat.message")
     @SendTo("/topic/chat.responses")
-    public Map<String, Object> handleMessage(Map<String, Object> message) {
+    public Map<String, Object> handleMessage(
+            Map<String, Object> message,
+            Principal principal) {
+        
         String text = (String) message.get("text");
         
         if (text == null || text.isBlank()) {
             return Map.of("error", "Текст пуст");
         }
 
-        // ✅ Извлекаем user_id из сообщения
-        Long userId = null;
-        Object userIdObj = message.get("user_id");
-        if (userIdObj != null) {
-            try {
-                userId = Long.valueOf(userIdObj.toString());
-                System.out.println("🔐 WebSocket: user_id=" + userId);
-            } catch (NumberFormatException e) {
-                System.err.println("⚠️ Неверный формат user_id: " + userIdObj);
-            }
+        // ✅ ПРОВЕРКА: Principal не null
+        if (principal == null) {
+            logger.warn("⚠️ WebSocket: Principal is null - пользователь не аутентифицирован");
+            return Map.of(
+                "is_financial", false,
+                "transactions", java.util.List.of(),
+                "reply", "❌ Ошибка: вы не аутентифицированы. Пожалуйста, войдите заново.",
+                "error", "NOT_AUTHENTICATED"
+            );
         }
 
-        // ✅ Передаём userId для привязки транзакций
+        // ✅ ПРОВЕРКА: userId не null
+        Long userId;
+        try {
+            String principalName = principal.getName();
+            if (principalName == null || principalName.isBlank()) {
+                throw new NumberFormatException("Principal name is empty");
+            }
+            userId = Long.valueOf(principalName);
+            logger.info("🔐 WebSocket: user_id={} (из JWT)", userId);
+        } catch (NumberFormatException e) {
+            logger.error("❌ Неверный формат user_id в Principal: {}", principal.getName());
+            return Map.of(
+                "is_financial", false,
+                "transactions", java.util.List.of(),
+                "reply", "❌ Ошибка: невалидный идентификатор пользователя.",
+                "error", "INVALID_USER_ID"
+            );
+        }
+
         return aiClientService.parseExpense(text, userId);
     }
 }
