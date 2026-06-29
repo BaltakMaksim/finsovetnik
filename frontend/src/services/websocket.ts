@@ -2,7 +2,7 @@
 import { Client, type IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-const WS_URL = 'http://localhost:8080/wss';
+const WS_URL = `${window.location.protocol}//${window.location.host}/ws`;
 
 class WebSocketService {
   private client: Client | null = null;
