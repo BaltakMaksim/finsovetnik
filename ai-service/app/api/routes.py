@@ -17,6 +17,7 @@ router = APIRouter()
 
 class ParseRequest(BaseModel):
     text: str
+    history: str = ""  #  Добавили поле для истории (опциональное)
 
 class ParseResponse(BaseModel):
     amount: float
@@ -64,23 +65,10 @@ SEED_WORD_LIST = [
 active_sessions = {}
 
 # =========================================================================
-# ЭНДПОИНТЫ
+# ПРОМПТЫ
 # =========================================================================
 
-@router.get("/")
-async def root():
-    """Health check"""
-    return {
-        "service": "ФинСоветник AI Service",
-        "status": "running",
-        "version": "1.0.0"
-    }
-
-@router.post("/parse")
-async def parse_expense(request: ParseRequest):
-    """Распознавание финансовых операций из текста."""
-    system_prompt = """
-Ты — финансовый ассистент. Анализируй сообщение пользователя и определяй, содержит ли оно финансовую операцию.
+FINANCIAL_PARSE_SYSTEM_PROMPT = """Ты — финансовый ассистент. Анализируй сообщение пользователя и определяй, содержит ли оно финансовую операцию.
 
 Верни результат СТРОГО в формате JSON (без markdown, без комментариев):
 {
@@ -99,18 +87,64 @@ async def parse_expense(request: ParseRequest):
    - Получает/зарабатывает/возврат → type: "INCOME"
    - Если тип неясен, по умолчанию ставь "EXPENSE"
 4. Поле reply должно содержать дружелюбный ответ пользователю.
+5.  Учитывай контекст предыдущих сообщений при ответе. Если пользователь ссылается на что-то из истории ("ещё", "тоже", "ещё раз"), понимай это в контексте.
 
 ВАЖНО:
 - Всегда возвращай валидный JSON
 - Никогда не добавляй markdown или комментарии
 """
+
+GENERAL_CHAT_SYSTEM_PROMPT = """Ты дружелюбный семейный финансовый консультант "ФинСоветник AI".
+Отвечай кратко, тепло, с юмором. Используй эмодзи.
+Учитывай контекст предыдущих сообщений, если они есть."""
+
+def format_user_prompt(text: str, history: str) -> str:
+    """Формирует user_prompt с учётом истории"""
+    if history and history.strip() and "история сообщений пуста" not in history.lower():
+        return f"{history}\n\nТекущее сообщение пользователя: {text}"
+    else:
+        return f"Текущее сообщение пользователя: {text}"
+
+async def call_general_chat(text: str, history: str) -> str:
+    """Вызывает общий чат с LLM"""
+    user_prompt = format_user_prompt(text, history)
+    
+    try:
+        response = await LLMRouter.call_llm(
+            system_prompt=GENERAL_CHAT_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.7,
+            max_tokens=1000
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error in general chat: {e}")
+        return "Извини, не смог ответить. Попробуй ещё раз! 🤔"
+# =========================================================================
+# ЭНДПОИНТЫ
+# =========================================================================
+
+@router.get("/")
+async def root():
+    """Health check"""
+    return {
+        "service": "ФинСоветник AI Service",
+        "status": "running",
+        "version": "1.0.0"
+    }
+
+@router.post("/parse")
+async def parse_expense(request: ParseRequest):
+    """Распознавание финансовых операций из текста с учётом контекста."""
+    
+    user_prompt = format_user_prompt(request.text, request.history)
     
     raw_response = ""
     
     try:
         raw_response = await LLMRouter.call_llm(
-            system_prompt=system_prompt,
-            user_prompt=request.text,
+            system_prompt=FINANCIAL_PARSE_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
             temperature=0.3,
             max_tokens=1000
         )
@@ -126,7 +160,14 @@ async def parse_expense(request: ParseRequest):
             parsed_data["transactions"] = []
         if "reply" not in parsed_data:
             parsed_data["reply"] = "Готово!" if parsed_data["is_financial"] else "Понял!"
-        
+            
+        if not parsed_data["is_financial"]:
+            logger.info("💬 Не финансовая операция, запускаем общий чат")
+            
+            general_reply = await call_general_chat(request.text, request.history)
+            parsed_data["reply"] = general_reply
+            
+            logger.info(f"💬 Общий чат ответ: {general_reply[:100]}...")
         return parsed_data
         
     except json.JSONDecodeError as e:
@@ -143,7 +184,7 @@ async def parse_expense(request: ParseRequest):
             "transactions": [],
             "reply": f"Произошла ошибка при обработке. Попробуйте ещё раз!"
         }
-        
+
 @router.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(file: UploadFile = File(...)):
     """Распознавание голосового сообщения."""
@@ -179,16 +220,18 @@ async def parse_qr(file: UploadFile = File(...)):
 
 @router.post("/chat")
 async def general_chat(request: ParseRequest):
-    """Общий чат с AI-агентом."""
-    system_prompt = """
-    Ты дружелюбный семейный финансовый консультант "ФинСоветник AI".
-    Отвечай кратко, тепло, с юмором. Используй эмодзи.
-    """
+    """Общий чат с AI-агентом с учётом контекста."""
+    
+    # ✅ Формируем user_prompt с учётом истории
+    if request.history and request.history.strip() and "история сообщений пуста" not in request.history.lower():
+        user_prompt = f"{request.history}\n\nТекущее сообщение пользователя: {request.text}"
+    else:
+        user_prompt = f"Текущее сообщение пользователя: {request.text}"
     
     try:
         response = await LLMRouter.call_llm(
-            system_prompt=system_prompt,
-            user_prompt=request.text,
+            system_prompt=GENERAL_CHAT_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
             temperature=0.7,
             max_tokens=1000
         )
@@ -353,7 +396,6 @@ async def auth_chat(request: AuthChatRequest):
                 "reply": "Ответь 'Да' (попробовать ещё раз) или 'Нет' (зарегистрироваться заново).",
                 "state": "OFFER_REREGISTER"
             }
-
     # =========================================================================
     # СОСТОЯНИЕ 6: Успешная аутентификация
     # =========================================================================
