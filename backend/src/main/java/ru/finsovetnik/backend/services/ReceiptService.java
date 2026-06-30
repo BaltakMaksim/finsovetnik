@@ -165,7 +165,7 @@ public class ReceiptService {
     // Вспомогательные методы
     // =========================================================================
     private Map<String, Object> sendPhotoToAiService(MultipartFile file) throws Exception {
-        String url = aiServiceUrl + "api/receipt/analyze-photo";
+        String url = aiServiceUrl + "/receipt/analyze-photo";
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
