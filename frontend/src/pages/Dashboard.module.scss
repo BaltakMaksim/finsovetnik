@@ -8,10 +8,12 @@
 
   @media (max-width: 768px) {
     padding: 1.25rem 1rem;
+    width: 100%;
   }
 
   @media (max-width: 400px) {
     padding: 1rem 0.75rem;
+    width: 100%;
   }
 }
 
@@ -21,6 +23,7 @@
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 2rem;
+  margin-top: 10px;
   flex-wrap: wrap;
   gap: 1rem;
 

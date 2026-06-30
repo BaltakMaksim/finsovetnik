@@ -87,9 +87,12 @@ export function Sidebar() {
 
         <nav className={styles.nav}>
           {navItems.map(({ to, icon: Icon, label }) => {
-            const isDisabled = to !== "/dashboard" && to !== '/chat';
-
-
+            let isDisabled = true ;
+            if(to === '/dashboard' && isAuthenticated) {
+                isDisabled = false;
+            } else if (to === '/' ) {
+                isDisabled = false;
+            } 
             return (
               <NavLink
                 key={to}
