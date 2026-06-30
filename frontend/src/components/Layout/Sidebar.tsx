@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { MessageSquare, PieChart, Settings, Wallet, LogOut, Menu, X } from 'lucide-react';
+import { MessageSquare, PieChart, Settings, Wallet, LogOut, Menu, X, LayoutDashboard } from 'lucide-react';
 import { useChatStore } from '@store/useChatStore';
 import { useState } from 'react';
 import styles from './Sidebar.module.scss';
 import clsx from 'clsx';
 
 const navItems = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Кабинет' },
   { to: '/', icon: MessageSquare, label: 'Чат' },
   { to: '/budgets', icon: Wallet, label: 'Бюджеты' },
   { to: '/analytics', icon: PieChart, label: 'Аналитика' },
@@ -86,7 +87,8 @@ export function Sidebar() {
 
         <nav className={styles.nav}>
           {navItems.map(({ to, icon: Icon, label }) => {
-            const isDisabled = true;
+            const isDisabled = to !== "/dashboard" && to !== '/chat';
+
 
             return (
               <NavLink

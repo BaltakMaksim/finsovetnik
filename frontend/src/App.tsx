@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import { Sidebar } from '@components/Layout/Sidebar';
 import { ChatPage } from '@pages/ChatPage';
 import styles from './App.module.scss';
+import { Dashboard } from './pages/Dashboard';
 
 // Заглушки для будущих страниц
 function BudgetsPage() {
@@ -26,6 +27,7 @@ export default function App() {
         <main className={styles.content}>
           <Routes>
             <Route path="/" element={<ChatPage />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/budgets" element={<BudgetsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
