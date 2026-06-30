@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { wsService } from '@services/websocket';
-import { authService } from '@services/auth';
+import { API_URL, authService } from '@services/auth';
 
 export enum TypeTransaction {
   INCOME = "INCOME",
@@ -31,7 +31,9 @@ interface ChatState {
   isAuthenticated: boolean;
   username: string | null;
   userId: number | null;
-  isLoading: boolean; // ✅ НОВОЕ: флаг загрузки при авто-входе
+  isLoading: boolean;
+  lastReceiptId: string | null; 
+  setLastReceiptId: (id: string | null) => void; 
 
   connect: () => void;
   disconnect: () => void;
@@ -39,6 +41,7 @@ interface ChatState {
   clearHistory: () => void;
   checkAuth: () => void;
   logout: () => void;
+  loadHistory: () => Promise<void>; //  НОВЫЙ МЕТОД
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -48,16 +51,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isAuthenticated: false,
   username: null,
   userId: null,
-  isLoading: true, // ✅ Начинаем с загрузки
+  isLoading: true,
+  lastReceiptId: null,
 
   checkAuth: async () => {
     set({ isLoading: true });
 
-    // ✅ Сначала пытаемся войти автоматически
     const autoLoginResult = await authService.tryAutoLogin();
 
     if (autoLoginResult) {
-      // Успешный авто-вход
       set({
         isLoading: false,
         isAuthenticated: true,
@@ -71,7 +73,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }]
       });
     } else {
-      // Авто-вход не удался — показываем регистрацию
       set({
         isLoading: false,
         isAuthenticated: false,
@@ -84,6 +85,49 @@ export const useChatStore = create<ChatState>((set, get) => ({
           timestamp: Date.now()
         }]
       });
+    }
+  },
+
+  setLastReceiptId: (id: string | null) => {
+    set({ lastReceiptId: id });
+  },
+  loadHistory: async () => {
+    const { isAuthenticated, userId } = get();
+    
+    if (!isAuthenticated || !userId) {
+      console.warn('Не удалось загрузить историю: пользователь не авторизован');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/history`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.messages && data.messages.length > 0) {
+          // Преобразуем в формат Message
+          const historyMessages: Message[] = data.messages.map((msg: any) => ({
+            id: msg.id,
+            text: msg.text,
+            sender: msg.sender as 'user' | 'ai',
+            timestamp: msg.timestamp,
+          }));
+
+          set({ messages: historyMessages });
+          console.log(`✅ Загружено ${historyMessages.length} сообщений из истории`);
+        } else {
+          console.log('История сообщений пуста');
+        }
+      } else {
+        console.error('Ошибка загрузки истории:', response.status);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки истории:', error);
     }
   },
 
@@ -150,7 +194,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           isTyping: false,
         }));
 
-        // ✅ Если аутентификация успешна — сохраняем всё, включая токены
+        // Если аутентификация успешна — сохраняем всё, включая токены
         if (response.authenticated && response.username && response.user_id && response.access_token && response.refresh_token) {
           authService.saveAuth(
             response.username,
@@ -180,7 +224,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
     } else {
-
       wsService.sendMessage(text);
     }
   },

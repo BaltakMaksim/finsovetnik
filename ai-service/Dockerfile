@@ -1,5 +1,12 @@
 FROM python:3.13-slim
 
+# Устанавливаем Tesseract OCR с русской поддержкой
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-rus \
+    libtesseract-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Установка зависимостей

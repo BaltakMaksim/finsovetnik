@@ -27,6 +27,11 @@ public class Transaction {
     @Column(name = "is_financial", nullable = false)
     private Boolean isFinancial = true;
 
+    @Column(name = "receipt_id")
+    private String receiptId;
+
+
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -60,4 +65,7 @@ public class Transaction {
     
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }
+
+    public String getReceiptId() { return receiptId; }
+    public void setReceiptId(String receiptId) { this.receiptId = receiptId; }
 }

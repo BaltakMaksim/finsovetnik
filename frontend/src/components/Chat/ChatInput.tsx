@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Send, Camera } from 'lucide-react';
+import { Send, Camera, Image as ImageIcon } from 'lucide-react';
 import styles from './ChatInput.module.scss';
 
 interface ChatInputProps {
   onSend: (text: string) => void;
-  onScanReceipt: () => void; // Теперь открывает сканер
+  onScanReceipt: () => void;
+  onUploadPhoto: () => void; // ✅ НОВОЕ
   disabled?: boolean;
 }
 
-export function ChatInput({ onSend, onScanReceipt, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, onScanReceipt, onUploadPhoto, disabled }: ChatInputProps) {
   const [text, setText] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -21,14 +22,26 @@ export function ChatInput({ onSend, onScanReceipt, disabled }: ChatInputProps) {
 
   return (
     <form className={styles.wrapper} onSubmit={handleSubmit}>
-      {/* ✅ Кнопка сканирования QR */}
+      {/* Кнопка QR-сканера */}
       <button
         type="button"
         className={styles.micButton}
         onClick={onScanReceipt}
-        title="Сканировать чек"
+        title="Сканировать QR-код чека"
+        disabled={disabled}
       >
         <Camera size={20} />
+      </button>
+
+      {/* ✅ Кнопка загрузки фото */}
+      <button
+        type="button"
+        className={styles.micButton}
+        onClick={onUploadPhoto}
+        title="Загрузить фото чека"
+        disabled={disabled}
+      >
+        <ImageIcon size={20} />
       </button>
 
       <div className={styles.inputWrapper}>
@@ -48,9 +61,9 @@ export function ChatInput({ onSend, onScanReceipt, disabled }: ChatInputProps) {
         />
       </div>
 
-      <button 
-        type="submit" 
-        className={styles.sendButton} 
+      <button
+        type="submit"
+        className={styles.sendButton}
         disabled={!text.trim() || disabled}
       >
         <Send />

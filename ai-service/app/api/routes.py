@@ -7,6 +7,9 @@ import json
 import re
 import logging
 import random
+from fastapi import UploadFile, File, HTTPException
+from app.services.ocr_service import extract_text_from_receipt
+from app.services.receipt_analyzer import analyze_receipt_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,7 +17,10 @@ router = APIRouter()
 # =========================================================================
 # МОДЕЛИ ДАННЫХ
 # =========================================================================
-
+class ReceiptPhotoResponse(BaseModel):
+    items: list[dict]
+    total_amount: float | None
+    store_name: str | None
 class ParseRequest(BaseModel):
     text: str
     history: str = ""  #  Добавили поле для истории (опциональное)
@@ -408,3 +414,25 @@ async def auth_chat(request: AuthChatRequest):
         }
         
     return {"reply": "Я тебя не понимаю.", "state": "ERROR"}
+
+@router.post("/receipt/analyze-photo", response_model=ReceiptPhotoResponse)
+async def analyze_receipt_photo(file: UploadFile = File(...)):
+    """Анализирует фото чека: OCR + LLM"""
+    try:
+        image_data = await file.read()
+        
+        # 1. OCR
+        raw_text = await extract_text_from_receipt(image_data)
+        
+        # 2. Анализ через LLM
+        analysis = await analyze_receipt_text(raw_text)
+        
+        return ReceiptPhotoResponse(
+            items=analysis.get("items", []),
+            total_amount=analysis.get("total_amount"),
+            store_name=analysis.get("store_name")
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка анализа фото: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -4,7 +4,9 @@ import { useChatStore } from '@store/useChatStore';
 import { MessageBubble } from './MessageBabble';
 import { ChatInput } from './ChatInput';
 import { QRScanner } from '@components/Reciept/QRScanner';
+import { PhotoUploader } from '@components/Reciept/PhotoUploader';
 import styles from './Chat.module.scss';
+import { API_URL } from '@/services/auth';
 
 export function Chat() {
   const {
@@ -13,13 +15,17 @@ export function Chat() {
     isTyping,
     isAuthenticated,
     isLoading,
+    lastReceiptId,
     connect,
     disconnect,
     sendMessage,
     checkAuth,
+    loadHistory,
+    setLastReceiptId,
   } = useChatStore();
 
   const [isScanning, setIsScanning] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,15 +40,24 @@ export function Chat() {
   }, [isAuthenticated, connect, disconnect]);
 
   useEffect(() => {
+    if (isConnected && isAuthenticated) {
+      console.log('✅ WebSocket подключен, загружаем историю...');
+      loadHistory();
+    }
+  }, [isConnected, isAuthenticated, loadHistory]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  //  Обработчик успешного сканирования QR
+  // =========================================================================
+  // ОБРАБОТЧИКИ QR-СКАНЕРА
+  // =========================================================================
   const handleScanSuccess = async (qrData: string) => {
     setIsScanning(false);
 
     try {
-      const response = await fetch('/api/receipts/scan', {
+      const response = await fetch(`${API_URL}/api/receipts/scan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,28 +69,34 @@ export function Chat() {
       const data = await response.json();
 
       if (data.success) {
-        //  Добавляем сообщение от AI в чат
+        // ✅ Сохраняем receipt_id для последующей загрузки фото
+        setLastReceiptId(data.data.receipt_id);
+
         const aiMessage = {
           id: crypto.randomUUID(),
-          text: ` Чек распознан!\n Сумма: ${data.data.amount}₽\n Дата: ${data.data.date}`,
+          text: `✅ QR-код распознан!\n💰 Сумма: ${data.data.amount}₽\n📅 Дата: ${data.data.date}\n\n📸 Загрузи фото чека, чтобы узнать, на что именно потрачены деньги.`,
           sender: 'ai' as const,
           timestamp: Date.now(),
           is_financial: true,
           transactions: [
             {
               amount: data.data.amount,
-              category: 'Покупка (QR)',
+              category: 'Чек (ожидает детализации)',
               owner: 'user',
               type: 'EXPENSE',
             },
           ],
         };
 
-        useChatStore.setState((state:any) => ({
+        useChatStore.setState((state: any) => ({
           messages: [...state.messages, aiMessage],
         }));
+
+        // ✅ Автоматически открываем загрузку фото через 2 секунды
+        setTimeout(() => {
+          setIsUploadingPhoto(true);
+        }, 2000);
       } else {
-        //  Ошибка от сервера
         const errorMessage = {
           id: crypto.randomUUID(),
           text: `❌ Ошибка: ${data.error || 'Не удалось распознать чек'}`,
@@ -89,10 +110,10 @@ export function Chat() {
       }
     } catch (error) {
       console.error('Ошибка сканирования:', error);
-      
+
       const errorMessage = {
         id: crypto.randomUUID(),
-        text: ' Не удалось отправить чек на сервер. Проверь подключение.',
+        text: '❌ Не удалось отправить чек на сервер. Проверь подключение.',
         sender: 'ai' as const,
         timestamp: Date.now(),
       };
@@ -103,19 +124,17 @@ export function Chat() {
     }
   };
 
-  //  Обработчик закрытия сканера
   const handleScanClose = () => {
     setIsScanning(false);
   };
 
-  // Обработчик ошибки сканера
   const handleScanError = (error: string) => {
     console.error('QR Scanner error:', error);
     setIsScanning(false);
 
     const errorMessage = {
       id: crypto.randomUUID(),
-      text: ` ${error}`,
+      text: `❌ ${error}`,
       sender: 'ai' as const,
       timestamp: Date.now(),
     };
@@ -125,12 +144,11 @@ export function Chat() {
     }));
   };
 
-  //  Обработчик открытия сканера
   const handleOpenScanner = () => {
     if (!isAuthenticated) {
       const errorMessage = {
         id: crypto.randomUUID(),
-        text: ' Сначала нужно авторизоваться, чтобы сканировать чеки.',
+        text: '⚠️ Сначала нужно авторизоваться, чтобы сканировать чеки.',
         sender: 'ai' as const,
         timestamp: Date.now(),
       };
@@ -144,6 +162,78 @@ export function Chat() {
     setIsScanning(true);
   };
 
+  // =========================================================================
+  // ОБРАБОТЧИКИ ЗАГРУЗКИ ФОТО
+  // =========================================================================
+  const handleOpenPhotoUploader = () => {
+    if (!isAuthenticated) {
+      const errorMessage = {
+        id: crypto.randomUUID(),
+        text: '⚠️ Сначала нужно авторизоваться, чтобы загружать чеки.',
+        sender: 'ai' as const,
+        timestamp: Date.now(),
+      };
+
+      useChatStore.setState((state) => ({
+        messages: [...state.messages, errorMessage],
+      }));
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+  };
+
+  const handlePhotoSuccess = (data: any) => {
+    setIsUploadingPhoto(false);
+    setLastReceiptId(null); // ✅ Сбрасываем ID после успешного слияния
+
+    const items = data.items || [];
+    const total = data.total_amount || 0;
+    const store = data.store_name || 'магазина';
+
+    // Формируем красивое сообщение с деталями
+    let details = `📸 Чек из ${store} распознан!\n💰 Всего: ${total}₽\n🛍️ Товаров: ${items.length}\n\nДетали:\n`;
+    items.forEach((item: any) => {
+      details += `• ${item.name}: ${item.sum}₽ (${item.category})\n`;
+    });
+
+    const aiMessage = {
+      id: crypto.randomUUID(),
+      text: details,
+      sender: 'ai' as const,
+      timestamp: Date.now(),
+      is_financial: true,
+    };
+
+    useChatStore.setState((state: any) => ({
+      messages: [...state.messages, aiMessage],
+    }));
+  };
+
+  const handlePhotoClose = () => {
+    setIsUploadingPhoto(false);
+    // Не сбрасываем receipt_id — пользователь может передумать и загрузить позже
+  };
+
+  const handlePhotoError = (error: string) => {
+    console.error('Photo upload error:', error);
+    setIsUploadingPhoto(false);
+
+    const errorMessage = {
+      id: crypto.randomUUID(),
+      text: `❌ Ошибка загрузки фото: ${error}`,
+      sender: 'ai' as const,
+      timestamp: Date.now(),
+    };
+
+    useChatStore.setState((state) => ({
+      messages: [...state.messages, errorMessage],
+    }));
+  };
+
+  // =========================================================================
+  // РЕНДЕР
+  // =========================================================================
   if (isLoading) {
     return (
       <div className={styles.container}>
@@ -183,6 +273,7 @@ export function Chat() {
       <ChatInput
         onSend={sendMessage}
         onScanReceipt={handleOpenScanner}
+        onUploadPhoto={handleOpenPhotoUploader}
         disabled={!isAuthenticated ? false : !isConnected}
       />
 
@@ -192,6 +283,16 @@ export function Chat() {
           onSuccess={handleScanSuccess}
           onClose={handleScanClose}
           onError={handleScanError}
+        />
+      )}
+
+      {/* ✅ Модальное окно загрузки фото */}
+      {isUploadingPhoto && (
+        <PhotoUploader
+          receiptId={lastReceiptId || undefined}
+          onSuccess={handlePhotoSuccess}
+          onClose={handlePhotoClose}
+          onError={handlePhotoError}
         />
       )}
     </div>

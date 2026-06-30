@@ -2,6 +2,7 @@ package ru.finsovetnik.backend.controllers;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import ru.finsovetnik.backend.services.JwtService;
 import ru.finsovetnik.backend.services.ReceiptService;
 
@@ -19,46 +20,48 @@ public class ReceiptController {
         this.jwtService = jwtService;
     }
 
+    // 1. Сканирование QR-кода
     @PostMapping("/scan")
     public ResponseEntity<?> scanReceipt(
             @RequestBody Map<String, String> request,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         
-        String qrData = request.get("qr_data");
-        
-        if (qrData == null || qrData.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "QR данные не получены"));
-        }
-
-        Long userId = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            try {
-                userId = jwtService.getUserIdFromToken(token);
-            } catch (Exception e) {
-                return ResponseEntity.status(401).body(Map.of("error", "Неверный токен"));
-            }
-        }
-
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Требуется авторизация"));
-        }
+        Long userId = extractUserId(authHeader);
+        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "Требуется авторизация"));
 
         try {
-            
-            Map<String, Object> parsed = receiptService.parseAndSave(userId, qrData);
+            Map<String, Object> result = receiptService.parseAndSave(userId, request.get("qr_data"));
+            return ResponseEntity.ok(Map.of("success", true, "data", result));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
 
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Чек успешно распознан!",
-                "data", parsed
-            ));
-            
+    // 2. Загрузка фото чека (Умное слияние)
+    @PostMapping("/scan-photo")
+    public ResponseEntity<?> scanReceiptPhoto(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "receipt_id", required = false) String receiptId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        
+        Long userId = extractUserId(authHeader);
+        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "Требуется авторизация"));
+
+        try {
+            Map<String, Object> result = receiptService.analyzePhotoAndMerge(userId, file, receiptId);
+            return ResponseEntity.ok(Map.of("success", true, "data", result));
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.internalServerError().body(
-                Map.of("error", "Ошибка обработки: " + e.getMessage())
-            );
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private Long extractUserId(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                return jwtService.getUserIdFromToken(authHeader.substring(7));
+            } catch (Exception e) { return null; }
+        }
+        return null;
     }
 }
