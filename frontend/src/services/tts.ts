@@ -1,82 +1,103 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
-class TtsService {
-  // Храним ссылку на текущий аудио-элемент, чтобы можно было остановить предыдущий звук
-  private currentAudio: HTMLAudioElement | null = null;
+interface TtsResponse {
+  audio_base64: string;
+}
 
-  /**
-   * Отправляет текст на бэкенд и возвращает URL для воспроизведения
-   */
+class TtsService {
+  private currentAudio: HTMLAudioElement | null = null;
+  private currentUrl: string | null = null;
+  private abortController: AbortController | null = null;
+
   async textToSpeech(text: string): Promise<string> {
+    // Отменяем предыдущий запрос, если он ещё летит
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+
+    // Освобождаем предыдущий Blob URL
+    this.revokeCurrentUrl();
+
     try {
       const response = await fetch(`${API_URL}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
+        signal: this.abortController.signal,
       });
 
       if (!response.ok) {
-        throw new Error('Ошибка генерации голоса');
+        throw new Error(`Ошибка генерации голоса: ${response.status}`);
       }
 
-      const data = await response.json();
-      
-      // Python возвращает аудио в виде base64 строки. 
-      // Нам нужно превратить её в Blob, чтобы браузер мог это проиграть.
+      const data: TtsResponse = await response.json();
+
       const byteCharacters = atob(data.audio_base64);
-      const byteNumbers = new Array(byteCharacters.length);
+      const byteArray = new Uint8Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+        byteArray[i] = byteCharacters.charCodeAt(i);
       }
-      const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: 'audio/mp3' });
-      
-      // Создаём временную ссылку на этот Blob в памяти браузера
-      return URL.createObjectURL(blob);
+
+      this.currentUrl = URL.createObjectURL(blob);
+      return this.currentUrl;
     } catch (error) {
+      if ((error as Error).name === 'AbortError') return '';
       console.error('❌ Ошибка TTS:', error);
       throw error;
     }
   }
 
-  /**
-   * Проигрывает аудио по переданному URL
-   */
   async playAudio(audioUrl: string): Promise<void> {
-    // Если что-то уже играет — останавливаем, чтобы звуки не накладывались
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio = null;
-    }
+    this.stopAudio();
 
     return new Promise((resolve, reject) => {
       const audio = new Audio(audioUrl);
       this.currentAudio = audio;
-      
+
       audio.onended = () => {
+        this.revokeCurrentUrl();
         this.currentAudio = null;
         resolve();
       };
-      
+
       audio.onerror = () => {
+        this.revokeCurrentUrl();
         this.currentAudio = null;
         reject(new Error('Ошибка воспроизведения'));
       };
-      
+
       audio.play().catch((err) => {
+        this.revokeCurrentUrl();
         this.currentAudio = null;
         reject(err);
       });
     });
   }
 
-  /**
-   * Принудительно останавливает текущее воспроизведение
-   */
+  /** Удобный метод: сгенерировать и сразу озвучить */
+  async speak(text: string): Promise<void> {
+    const url = await this.textToSpeech(text);
+    if (url) await this.playAudio(url);
+  }
+
   stopAudio(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio = null;
+    }
+    this.revokeCurrentUrl();
+  }
+
+  private revokeCurrentUrl(): void {
+    if (this.currentUrl) {
+      URL.revokeObjectURL(this.currentUrl);
+      this.currentUrl = null;
     }
   }
 }
