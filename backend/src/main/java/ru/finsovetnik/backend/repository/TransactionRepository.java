@@ -39,9 +39,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT t.category, SUM(t.amount) FROM Transaction t WHERE t.user.id = :userId AND t.type = 'EXPENSE' AND t.createdAt >= :from GROUP BY t.category")
     List<Object[]> sumByCategoryAndPeriod(@Param("userId") Long userId, @Param("from") LocalDateTime from);
 
+        Optional<Transaction> findByFiscalId(String fiscalId);
     /**
      * Посчитать количество транзакций за период
      */
+    @Query("SELECT t FROM Transaction t WHERE t.fiscalId = :fiscalId AND t.category <> 'Чек (ожидает детализации)'")
+Optional<Transaction> findCompletedByFiscalId(@Param("fiscalId") String fiscalId);
+
     @Query("SELECT COUNT(t) FROM Transaction t WHERE t.user.id = :userId AND t.createdAt >= :from")
     long countByUserIdAndPeriod(@Param("userId") Long userId, @Param("from") LocalDateTime from);
 }

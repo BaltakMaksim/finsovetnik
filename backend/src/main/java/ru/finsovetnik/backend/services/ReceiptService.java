@@ -14,7 +14,9 @@ import ru.finsovetnik.backend.enums.TransactionType;
 import ru.finsovetnik.backend.repository.TransactionRepository;
 import ru.finsovetnik.backend.repository.UserRepository;
 
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -33,6 +35,8 @@ public class ReceiptService {
         DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmm"),
     };
 
+    private static final String DRAFT_CATEGORY = "Чек (ожидает детализации)";
+
     public ReceiptService(
             TransactionRepository transactionRepository,
             UserRepository userRepository,
@@ -49,43 +53,76 @@ public class ReceiptService {
     // 1. СКАНИРОВАНИЕ QR (Создаем "Черновик" чека)
     // =========================================================================
     public Map<String, Object> parseAndSave(Long userId, String qrData) {
-        Map<String, String> params = parseQrString(qrData);
-        String dateStr = params.get("t");
-        String amountStr = params.get("s");
+    Map<String, String> params = parseQrString(qrData);
+    
+    String dateStr = params.get("t");
+    String amountStr = params.get("s");
+    String fn = params.get("fn");
+    String docNumber = params.get("i");
+    String fiscalSign = params.get("fp");
 
-        if (dateStr == null || amountStr == null) {
-            throw new RuntimeException("Неверный формат QR-кода");
-        }
-
-        String formattedDate = parseDateFlexible(dateStr);
-        double amount = Double.parseDouble(amountStr.replace(",", "."));
-        User user = userRepository.findById(userId).orElseThrow();
-
-        //  Генерируем уникальный ID для этого чека
-        String receiptId = UUID.randomUUID().toString();
-
-        //  Сохраняем "Родительскую" транзакцию (Черновик)
-        Transaction draft = new Transaction();
-        draft.setUser(user);
-        draft.setAmount(amount);
-        draft.setCategory("Чек (ожидает детализации)");
-        draft.setType(TransactionType.EXPENSE);
-        draft.setIsFinancial(true);
-        draft.setReceiptId(receiptId);
-        draft.setReply(String.format("QR-чек на %.2f₽ от %s. Отправь фото для детализации.", amount, formattedDate));
-
-        transactionRepository.save(draft);
-
-        messageHistoryService.saveMessage(userId, "user", "Сканирование QR-кода чека");
-        messageHistoryService.saveMessage(userId, "ai", draft.getReply());
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("amount", amount);
-        result.put("date", formattedDate);
-        result.put("receipt_id", receiptId); 
-
-        return result;
+    if (dateStr == null || amountStr == null) {
+        throw new RuntimeException("Неверный формат QR-кода");
     }
+
+    String fiscalId = null;
+    if (fn != null && docNumber != null && fiscalSign != null) {
+        fiscalId = String.format("%s_%s_%s", fn, docNumber, fiscalSign);
+    }
+
+    //  Если есть старый черновик с таким fiscalId — удаляем его
+    if (fiscalId != null) {
+        Optional<Transaction> oldDraft = transactionRepository.findByFiscalId(fiscalId);
+        if (oldDraft.isPresent() && DRAFT_CATEGORY.equals(oldDraft.get().getCategory())) {
+            transactionRepository.delete(oldDraft.get());
+            System.out.println("🗑️ Старый черновик удалён");
+        }
+        
+        // Проверяем только ГОТОВЫЕ транзакции
+        Optional<Transaction> existing = transactionRepository.findCompletedByFiscalId(fiscalId);
+        if (existing.isPresent()) {
+            Transaction existingTx = existing.get();
+            String existingDate = formatCreatedAt(existingTx.getCreatedAt());
+            
+            throw new RuntimeException(
+                String.format(
+                    "Этот чек уже учтён! 🧾\n💰 Сумма: %.2f₽\n📅 Дата: %s\n\nПопробуйте отсканировать другой чек.", 
+                    existingTx.getAmount(),
+                    existingDate
+                )
+            );
+        }
+    }
+
+    String formattedDate = parseDateFlexible(dateStr);
+    double amount = Double.parseDouble(amountStr.replace(",", "."));
+    User user = userRepository.findById(userId).orElseThrow();
+
+    String receiptId = UUID.randomUUID().toString();
+
+    Transaction draft = new Transaction();
+    draft.setUser(user);
+    draft.setAmount(amount);
+    draft.setCategory(DRAFT_CATEGORY);
+    draft.setType(TransactionType.EXPENSE);
+    draft.setIsFinancial(true);
+    draft.setReceiptId(receiptId);
+    draft.setFiscalId(fiscalId);
+    draft.setReply(String.format("QR-чек на %.2f₽ от %s. Загрузите фото для детализации.", amount, formattedDate));
+
+    transactionRepository.save(draft);
+
+    messageHistoryService.saveMessage(userId, "user", "Сканирование QR-кода чека");
+    messageHistoryService.saveMessage(userId, "ai", draft.getReply());
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("amount", amount);
+    result.put("date", formattedDate);
+    result.put("receipt_id", receiptId);
+    result.put("fiscal_id", fiscalId);
+
+    return result;
+}
 
     // =========================================================================
     // 2. ЗАГРУЗКА ФОТО + УМНОЕ СЛИЯНИЕ
@@ -102,21 +139,65 @@ public class ReceiptService {
             throw new RuntimeException("AI не смог распознать товары на чеке");
         }
 
-        // 2. Получаем точную сумму из QR (если он был отсканирован)
-        double qrTotalAmount = 0;
-        if (receiptId != null && !receiptId.isBlank()) {
-            Optional<Transaction> draftOpt = transactionRepository.findByReceiptId(receiptId);
-            if (draftOpt.isPresent()) {
-                qrTotalAmount = draftOpt.get().getAmount();
-                // Удаляем черновик, чтобы не дублировать сумму в балансе
-                transactionRepository.delete(draftOpt.get());
+        // ✅ ИЗВЛЕКАЕМ ФИСКАЛЬНЫЕ ДАННЫЕ ИЗ ФОТО
+        Map<String, Object> fiscalData = (Map<String, Object>) analysis.get("fiscal_data");
+        String photoFiscalId = null;
+        
+        if (fiscalData != null) {
+            String fn = fiscalData.get("fn") != null ? fiscalData.get("fn").toString() : null;
+            String docNumber = fiscalData.get("i") != null ? fiscalData.get("i").toString() : null;
+            String fiscalSign = fiscalData.get("fp") != null ? fiscalData.get("fp").toString() : null;
+            
+            if (fn != null && !fn.isBlank() && 
+                docNumber != null && !docNumber.isBlank() && 
+                fiscalSign != null && !fiscalSign.isBlank()) {
+                photoFiscalId = String.format("%s_%s_%s", fn, docNumber, fiscalSign);
             }
         }
 
-        // Если ID не передан, создаем новый
+        // 2. Получаем точную сумму и fiscalId из QR-черновика (если он был)
+        double qrTotalAmount = 0;
+        String fiscalId = null;
+        
+        if (receiptId != null && !receiptId.isBlank()) {
+            Optional<Transaction> draftOpt = transactionRepository.findByReceiptId(receiptId);
+            if (draftOpt.isPresent()) {
+                Transaction draft = draftOpt.get();
+                qrTotalAmount = draft.getAmount();
+                fiscalId = draft.getFiscalId(); // ✅ Берём fiscalId из QR
+                transactionRepository.delete(draft); // ✅ Удаляем черновик
+                System.out.println("🗑️ Черновик удалён, создаём детальные транзакции");
+            }
+        }
+
+        //  Если не было QR, но LLM извлёк фискальные данные — используем их
+        if (fiscalId == null && photoFiscalId != null) {
+            // Проверяем, нет ли уже ГОТОВЫХ транзакций с таким fiscalId
+            Optional<Transaction> existing = transactionRepository.findCompletedByFiscalId(photoFiscalId);
+            if (existing.isPresent()) {
+                Transaction existingTx = existing.get();
+                String existingDate = formatCreatedAt(existingTx.getCreatedAt());
+                
+                throw new RuntimeException(
+                    String.format(
+                        "Этот чек уже учтён! 🧾\n💰 Сумма: %.2f₽\n📅 Дата: %s\n\nПопробуйте другой чек.", 
+                        existingTx.getAmount(),
+                        existingDate
+                    )
+                );
+            }
+            fiscalId = photoFiscalId;
+        }
+
+        // Fallback: если фискальных данных нет вообще — используем хеш файла
+        if (fiscalId == null) {
+            String fileHash = calculateFileHash(file);
+            fiscalId = "photo_" + fileHash;
+        }
+
         String finalReceiptId = (receiptId != null && !receiptId.isBlank()) ? receiptId : UUID.randomUUID().toString();
 
-        // 3. Создаем детальные транзакции с математической коррекцией
+        // 3. Создаем детальные транзакции
         double currentSum = 0;
         for (int i = 0; i < items.size(); i++) {
             Map<String, Object> item = items.get(i);
@@ -124,6 +205,7 @@ public class ReceiptService {
             Transaction transaction = new Transaction();
             transaction.setUser(user);
             transaction.setReceiptId(finalReceiptId);
+            transaction.setFiscalId(fiscalId);
             transaction.setType(TransactionType.EXPENSE);
             transaction.setIsFinancial(true);
             
@@ -162,10 +244,52 @@ public class ReceiptService {
     }
 
     // =========================================================================
+    // 3. СОХРАНЕНИЕ ТРАНЗАКЦИИ ИЗ ЧАТА
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    public void saveTransactionFromChat(Long userId, Map<String, Object> transactionData) {
+        Number amount = (Number) transactionData.get("amount");
+        if (amount == null || amount.doubleValue() <= 0) {
+            System.out.println("⚠️ Пропускаем сохранение — сумма некорректна: " + amount);
+            return;
+        }
+        
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        Transaction transaction = new Transaction();
+        transaction.setUser(user);
+        
+        String category = (String) transactionData.get("category");
+        String typeStr = (String) transactionData.get("type");
+        
+        transaction.setAmount(amount.doubleValue());
+        transaction.setCategory(category != null ? category : "Другое");
+        transaction.setType(TransactionType.valueOf(typeStr != null ? typeStr : "EXPENSE"));
+        transaction.setIsFinancial(true);
+        transaction.setReply("Зафиксировано из чата");
+        
+        transactionRepository.save(transaction);
+    }
+
+    // =========================================================================
     // Вспомогательные методы
     // =========================================================================
+    
+    private String calculateFileHash(MultipartFile file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("MD5");
+        byte[] fileBytes = file.getBytes();
+        byte[] hashBytes = digest.digest(fileBytes);
+        
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hashBytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
     private Map<String, Object> sendPhotoToAiService(MultipartFile file) throws Exception {
-        String url = aiServiceUrl + "/api/receipt/analyze-photo";
+        String url = aiServiceUrl + "/receipt/analyze-photo";
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -207,5 +331,24 @@ public class ReceiptService {
             if (kv.length == 2) params.put(kv[0], kv[1]);
         }
         return params;
+    }
+
+    private String formatCreatedAt(Object createdAt) {
+        if (createdAt == null) return "неизвестно";
+        
+        try {
+            if (createdAt instanceof LocalDateTime) {
+                return ((LocalDateTime) createdAt).format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+            } else if (createdAt instanceof java.util.Date) {
+                LocalDateTime ldt = ((java.util.Date) createdAt).toInstant()
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime();
+                return ldt.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+            }
+        } catch (Exception e) {
+            return "неизвестно";
+        }
+        
+        return "неизвестно";
     }
 }

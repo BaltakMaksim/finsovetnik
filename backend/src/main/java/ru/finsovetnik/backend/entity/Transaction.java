@@ -39,7 +39,11 @@ public class Transaction {
     @JoinColumn(name = "user_id")
     private User user;
 
-    // Геттеры и сеттеры
+    @Column(name = "fiscal_id", unique = true)
+    private String fiscalId;
+       // Геттеры и сеттеры
+    public String getFiscalId() { return fiscalId; }
+    public void setFiscalId(String fiscalId) { this.fiscalId = fiscalId; }
     public Long getId() { return id; }
     
     public Double getAmount() { return amount; }

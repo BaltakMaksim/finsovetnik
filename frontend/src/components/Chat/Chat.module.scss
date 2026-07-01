@@ -7,8 +7,6 @@ $mobile-breakpoint: 768px;
   display: flex;
   flex-direction: column;
   height: calc(100vh - $header-height);
-  max-width: 90%;
-  margin: 0 auto;
   width: 100%;
 
   // ✅ Мобильная адаптация

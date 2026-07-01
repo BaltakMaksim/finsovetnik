@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Send, Camera, Image as ImageIcon, Square, Mic } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, Camera, Image as ImageIcon, Square, Mic, Plus, X } from 'lucide-react';
 import styles from './ChatInput.module.scss';
 import { audioService } from '@/services/audio';
 
 interface ChatInputProps {
-  onSend: (text: string,  isVoice?: boolean) => void;
+  onSend: (text: string, isVoice?: boolean) => void;
   onScanReceipt: () => void;
   onUploadPhoto: () => void;
   disabled?: boolean;
@@ -12,7 +12,10 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, onScanReceipt, onUploadPhoto, disabled }: ChatInputProps) {
   const [text, setText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);  
+  const [isRecording, setIsRecording] = useState(false);
+  const [showActions, setShowActions] = useState(false); // ✅ Раскрывающееся меню
+  const actionsRef = useRef<HTMLDivElement>(null);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (text.trim()) {
@@ -20,84 +23,130 @@ export function ChatInput({ onSend, onScanReceipt, onUploadPhoto, disabled }: Ch
       setText('');
     }
   };
-   const handleMicClick = async () => {
-  if (isRecording) {
-    // Останавливаем запись
-    setIsRecording(false);
-    try {
-      const audioBlob = await audioService.stopRecording();
-      
-      // Отправляем аудио на распознавание
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'recording.webm');
 
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const handleMicClick = async () => {
+    if (isRecording) {
+      setIsRecording(false);
+      setShowActions(false); // ✅ Закрываем меню после действия
+      try {
+        const audioBlob = await audioService.stopRecording();
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
 
-      const response = await fetch(`${API_URL}/api/transcribe`, {
-        method: 'POST',
-        body: formData,
-      });
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+        const response = await fetch(`${API_URL}/api/transcribe`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Ошибка сервера:', errorText);
-        throw new Error('Ошибка распознавания');
+        if (!response.ok) throw new Error('Ошибка распознавания');
+
+        const data = await response.json();
+        if (data.text && data.text.trim()) {
+          onSend(data.text, true);
+        }
+      } catch (error) {
+        console.error('❌ Ошибка распознавания:', error);
+        alert('Не удалось распознать речь. Попробуйте ещё раз.');
       }
-
-      const data = await response.json();
-      const recognizedText = data.text;
-
-      // Отправляем распознанный текст в чат как голосовое сообщение
-      if (recognizedText && recognizedText.trim()) {
-        onSend(recognizedText, true); //  isVoice = true
-      } else {
-        console.warn('⚠️ Распознанный текст пуст');
+    } else {
+      try {
+        await audioService.startRecording();
+        setIsRecording(true);
+        setShowActions(false); // ✅ Закрываем меню
+      } catch (error) {
+        console.error('❌ Ошибка доступа к микрофону:', error);
+        alert('Не удалось получить доступ к микрофону.');
       }
-    } catch (error) {
-      console.error('❌ Ошибка распознавания:', error);
-      alert('Не удалось распознать речь. Попробуйте ещё раз.');
     }
-  } else {
-    //  Начинаем запись
-    try {
-      await audioService.startRecording();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('❌ Ошибка доступа к микрофону:', error);
-      alert('Не удалось получить доступ к микрофону. Проверьте разрешения браузера.');
+  };
+
+  // ✅ Закрытие меню при клике вне его
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
+        setShowActions(false);
+      }
+    };
+
+    if (showActions) {
+      document.addEventListener('mousedown', handleClickOutside);
     }
-  }
-};
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showActions]);
+
+  // ✅ Обработчики действий с закрытием меню
+  const handleScanClick = () => {
+    setShowActions(false);
+    onScanReceipt();
+  };
+
+  const handleUploadClick = () => {
+    setShowActions(false);
+    onUploadPhoto();
+  };
+
   return (
     <form className={styles.wrapper} onSubmit={handleSubmit}>
-      {/* Кнопка QR-сканера */}
+      {/* ✅ Кнопка "+" — раскрывает меню на мобильном */}
       <button
         type="button"
-        className={styles.micButton}
-        onClick={onScanReceipt}
-        title="Сканировать QR-код чека"
+        className={`${styles.toggleButton} ${showActions ? styles.active : ''}`}
+        onClick={() => setShowActions(!showActions)}
         disabled={disabled}
+        title="Дополнительные действия"
       >
-        <Camera size={20} />
+        {showActions ? <X size={20} /> : <Plus size={20} />}
       </button>
 
-      {/* ✅ Кнопка загрузки фото */}
-      <button
-        type="button"
-        className={styles.micButton}
-        onClick={onUploadPhoto}
-        title="Загрузить фото чека"
-        disabled={disabled}
+      {/* ✅ Панель действий (раскрывается на мобильном) */}
+      <div 
+        ref={actionsRef}
+        className={`${styles.actionPanel} ${showActions ? styles.show : ''}`}
       >
-        <ImageIcon size={20} />
-      </button>
+        <button
+          type="button"
+          className={styles.actionButton}
+          onClick={handleScanClick}
+          disabled={disabled}
+          title="Сканировать QR-код"
+        >
+          <Camera size={20} />
+          <span className={styles.actionLabel}>QR</span>
+        </button>
 
+        <button
+          type="button"
+          className={styles.actionButton}
+          onClick={handleUploadClick}
+          disabled={disabled}
+          title="Загрузить фото чека"
+        >
+          <ImageIcon size={20} />
+          <span className={styles.actionLabel}>Фото</span>
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.actionButton} ${isRecording ? styles.recording : ''}`}
+          onClick={handleMicClick}
+          disabled={disabled}
+          title={isRecording ? 'Остановить запись' : 'Голосовой ввод'}
+        >
+          {isRecording ? <Square size={20} /> : <Mic size={20} />}
+          <span className={styles.actionLabel}>
+            {isRecording ? 'Стоп' : 'Голос'}
+          </span>
+        </button>
+      </div>
+
+      {/* ✅ Поле ввода — занимает максимум места */}
       <div className={styles.inputWrapper}>
         <textarea
           className={styles.textarea}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Напиши сообщение или отсканируй чек..."
+          placeholder="Напиши сообщение..."
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -108,15 +157,8 @@ export function ChatInput({ onSend, onScanReceipt, onUploadPhoto, disabled }: Ch
           rows={1}
         />
       </div>
-      <button
-        className={`${styles.micButton} ${isRecording ? styles.recording : ''}`}
-        onClick={handleMicClick}
-        disabled={disabled}
-        title={isRecording ? 'Остановить запись' : 'Нажмите, чтобы говорить'}
-      >
-        {isRecording ? <Square size={18} /> : <Mic size={18} />}
-      </button>
 
+      {/*  Кнопка отправки */}
       <button
         type="submit"
         className={styles.sendButton}
