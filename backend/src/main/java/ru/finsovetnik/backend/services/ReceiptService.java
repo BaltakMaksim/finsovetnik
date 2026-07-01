@@ -128,120 +128,131 @@ public class ReceiptService {
     // 2. ЗАГРУЗКА ФОТО + УМНОЕ СЛИЯНИЕ
     // =========================================================================
     @SuppressWarnings("unchecked")
-    public Map<String, Object> analyzePhotoAndMerge(Long userId, MultipartFile file, String receiptId) throws Exception {
-        User user = userRepository.findById(userId).orElseThrow();
+public Map<String, Object> analyzePhotoAndMerge(Long userId, MultipartFile file, String receiptId) throws Exception {
+    User user = userRepository.findById(userId).orElseThrow();
 
-        // 1. Отправляем фото в Python (OCR + LLM)
-        Map<String, Object> analysis = sendPhotoToAiService(file);
+    // 1. Отправляем фото в Python (OCR + LLM)
+    Map<String, Object> analysis = sendPhotoToAiService(file);
+    
+    List<Map<String, Object>> items = (List<Map<String, Object>>) analysis.get("items");
+    if (items == null || items.isEmpty()) {
+        throw new RuntimeException("AI не смог распознать товары на чеке");
+    }
+
+    // ✅ИЗВЛЕКАЕМ ФИСКАЛЬНЫЕ ДАННЫЕ ИЗ ФОТО
+    Map<String, Object> fiscalData = (Map<String, Object>) analysis.get("fiscal_data");
+    String photoFiscalId = null;
+    
+    if (fiscalData != null) {
+        String fn = fiscalData.get("fn") != null ? fiscalData.get("fn").toString() : null;
+        String docNumber = fiscalData.get("i") != null ? fiscalData.get("i").toString() : null;
+        String fiscalSign = fiscalData.get("fp") != null ? fiscalData.get("fp").toString() : null;
         
-        List<Map<String, Object>> items = (List<Map<String, Object>>) analysis.get("items");
-        if (items == null || items.isEmpty()) {
-            throw new RuntimeException("AI не смог распознать товары на чеке");
+        if (fn != null && !fn.isBlank() && 
+            docNumber != null && !docNumber.isBlank() && 
+            fiscalSign != null && !fiscalSign.isBlank()) {
+            photoFiscalId = String.format("%s_%s_%s", fn, docNumber, fiscalSign);
         }
+    }
 
-        // ✅ ИЗВЛЕКАЕМ ФИСКАЛЬНЫЕ ДАННЫЕ ИЗ ФОТО
-        Map<String, Object> fiscalData = (Map<String, Object>) analysis.get("fiscal_data");
-        String photoFiscalId = null;
-        
-        if (fiscalData != null) {
-            String fn = fiscalData.get("fn") != null ? fiscalData.get("fn").toString() : null;
-            String docNumber = fiscalData.get("i") != null ? fiscalData.get("i").toString() : null;
-            String fiscalSign = fiscalData.get("fp") != null ? fiscalData.get("fp").toString() : null;
+    //  ИЩЕМ СУЩЕСТВУЮЩИЕ ТРАНЗАКЦИИ С ЭТИМ fiscalId
+    double qrTotalAmount = 0;
+    String fiscalId = null;
+    
+    // Сначала ищем по receiptId (если он передан)
+    if (receiptId != null && !receiptId.isBlank()) {
+        Optional<Transaction> draftOpt = transactionRepository.findByReceiptId(receiptId);
+        if (draftOpt.isPresent()) {
+            Transaction draft = draftOpt.get();
+            qrTotalAmount = draft.getAmount();
+            fiscalId = draft.getFiscalId();
+            transactionRepository.delete(draft);
+            System.out.println("🗑️ Черновик по receiptId удалён");
+        }
+    }
+
+    // 2️ Если не было QR, но есть fiscalId из фото — ищем черновик по fiscalId
+    if (fiscalId == null && photoFiscalId != null) {
+        Optional<Transaction> existingByFiscal = transactionRepository.findByFiscalId(photoFiscalId);
+        if (existingByFiscal.isPresent()) {
+            Transaction existing = existingByFiscal.get();
             
-            if (fn != null && !fn.isBlank() && 
-                docNumber != null && !docNumber.isBlank() && 
-                fiscalSign != null && !fiscalSign.isBlank()) {
-                photoFiscalId = String.format("%s_%s_%s", fn, docNumber, fiscalSign);
-            }
-        }
-
-        // 2. Получаем точную сумму и fiscalId из QR-черновика (если он был)
-        double qrTotalAmount = 0;
-        String fiscalId = null;
-        
-        if (receiptId != null && !receiptId.isBlank()) {
-            Optional<Transaction> draftOpt = transactionRepository.findByReceiptId(receiptId);
-            if (draftOpt.isPresent()) {
-                Transaction draft = draftOpt.get();
-                qrTotalAmount = draft.getAmount();
-                fiscalId = draft.getFiscalId(); // ✅ Берём fiscalId из QR
-                transactionRepository.delete(draft); // ✅ Удаляем черновик
-                System.out.println("🗑️ Черновик удалён, создаём детальные транзакции");
-            }
-        }
-
-        //  Если не было QR, но LLM извлёк фискальные данные — используем их
-        if (fiscalId == null && photoFiscalId != null) {
-            // Проверяем, нет ли уже ГОТОВЫХ транзакций с таким fiscalId
-            Optional<Transaction> existing = transactionRepository.findCompletedByFiscalId(photoFiscalId);
-            if (existing.isPresent()) {
-                Transaction existingTx = existing.get();
-                String existingDate = formatCreatedAt(existingTx.getCreatedAt());
-                
+            // Если это ЧЕРНОВИК — удаляем его
+            if (DRAFT_CATEGORY.equals(existing.getCategory())) {
+                qrTotalAmount = existing.getAmount();
+                fiscalId = existing.getFiscalId();
+                transactionRepository.delete(existing);
+                System.out.println("🗑️ Черновик по fiscalId удалён");
+            } else {
+                // Это ГОТОВАЯ транзакция — дубликат!
+                String existingDate = formatCreatedAt(existing.getCreatedAt());
                 throw new RuntimeException(
                     String.format(
-                        "Этот чек уже учтён! 🧾\n💰 Сумма: %.2f₽\n📅 Дата: %s\n\nПопробуйте другой чек.", 
-                        existingTx.getAmount(),
+                        "Этот чек уже учтён! 🧾\n💰 Сумма: %.2f₽\n📅 Дата: %s\n\nПопробуйте другой чек.",
+                        existing.getAmount(),
                         existingDate
                     )
                 );
             }
-            fiscalId = photoFiscalId;
         }
+    }
 
-        // Fallback: если фискальных данных нет вообще — используем хеш файла
-        if (fiscalId == null) {
+    // ✅ Если fiscalId всё ещё null — используем photoFiscalId или хеш файла
+    if (fiscalId == null) {
+        if (photoFiscalId != null) {
+            fiscalId = photoFiscalId;
+        } else {
             String fileHash = calculateFileHash(file);
             fiscalId = "photo_" + fileHash;
         }
+    }
 
-        String finalReceiptId = (receiptId != null && !receiptId.isBlank()) ? receiptId : UUID.randomUUID().toString();
+    String finalReceiptId = (receiptId != null && !receiptId.isBlank()) ? receiptId : UUID.randomUUID().toString();
 
-        // 3. Создаем детальные транзакции
-        double currentSum = 0;
-        for (int i = 0; i < items.size(); i++) {
-            Map<String, Object> item = items.get(i);
-            
-            Transaction transaction = new Transaction();
-            transaction.setUser(user);
-            transaction.setReceiptId(finalReceiptId);
-            transaction.setFiscalId(fiscalId);
-            transaction.setType(TransactionType.EXPENSE);
-            transaction.setIsFinancial(true);
-            
-            String name = (String) item.getOrDefault("name", "Товар");
-            String category = (String) item.getOrDefault("category", "Другое");
-            double itemPrice = item.get("sum") != null ? ((Number) item.get("sum")).doubleValue() : 0;
-            int quantity = item.get("quantity") != null ? ((Number) item.get("quantity")).intValue() : 1;
+    // 3. Создаем детальные транзакции
+    double currentSum = 0;
+    for (int i = 0; i < items.size(); i++) {
+        Map<String, Object> item = items.get(i);
+        
+        Transaction transaction = new Transaction();
+        transaction.setUser(user);
+        transaction.setReceiptId(finalReceiptId);
+        transaction.setFiscalId(fiscalId);
+        transaction.setType(TransactionType.EXPENSE);
+        transaction.setIsFinancial(true);
+        
+        String name = (String) item.getOrDefault("name", "Товар");
+        String category = (String) item.getOrDefault("category", "Другое");
+        double itemPrice = item.get("sum") != null ? ((Number) item.get("sum")).doubleValue() : 0;
+        int quantity = item.get("quantity") != null ? ((Number) item.get("quantity")).intValue() : 1;
 
-            //  Для ПОСЛЕДНЕГО товара подгоняем сумму под точный QR
-            if (i == items.size() - 1 && qrTotalAmount > 0) {
-                itemPrice = qrTotalAmount - currentSum;
-            }
-
-            transaction.setAmount(itemPrice);
-            transaction.setCategory(category);
-            transaction.setReply(String.format("%s x%d (%s)", name, quantity, category));
-            
-            transactionRepository.save(transaction);
-            currentSum += itemPrice;
+        if (i == items.size() - 1 && qrTotalAmount > 0) {
+            itemPrice = qrTotalAmount - currentSum;
         }
 
-        // 4. Сохраняем в историю чата
-        String store = (String) analysis.getOrDefault("store_name", "магазина");
-        String summary = String.format(
-            "📸 Чек из %s распознан!\n💰 Всего: %.2f₽\n🛍️ Товаров: %d\n\nДетали:\n%s",
-            store,
-            qrTotalAmount > 0 ? qrTotalAmount : currentSum,
-            items.size(),
-            buildItemsList(items)
-        );
-
-        messageHistoryService.saveMessage(userId, "user", "📸 Загрузка фото чека");
-        messageHistoryService.saveMessage(userId, "ai", summary);
-
-        return analysis;
+        transaction.setAmount(itemPrice);
+        transaction.setCategory(category);
+        transaction.setReply(String.format("%s x%d (%s)", name, quantity, category));
+        
+        transactionRepository.save(transaction);
+        currentSum += itemPrice;
     }
+
+    // 4. Сохраняем в историю чата
+    String store = (String) analysis.getOrDefault("store_name", "магазина");
+    String summary = String.format(
+        "📸 Чек из %s распознан!\n💰 Всего: %.2f₽\n🛍️ Товаров: %d\n\nДетали:\n%s",
+        store,
+        qrTotalAmount > 0 ? qrTotalAmount : currentSum,
+        items.size(),
+        buildItemsList(items)
+    );
+
+    messageHistoryService.saveMessage(userId, "user", "📸 Загрузка фото чека");
+    messageHistoryService.saveMessage(userId, "ai", summary);
+
+    return analysis;
+}
 
     // =========================================================================
     // 3. СОХРАНЕНИЕ ТРАНЗАКЦИИ ИЗ ЧАТА
